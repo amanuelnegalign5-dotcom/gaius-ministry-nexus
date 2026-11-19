@@ -1,0 +1,22 @@
+GAIUS NEXUS v11.1 - GitHub Pages missing-icons repair
+
+The screenshot from the current GitHub workflow says: Missing PWA PNG icons in icons/.
+Upload ALL PNG files from this archive to the icons/ folder at the repository root.
+Do NOT upload the ZIP itself expecting GitHub Pages to unpack it.
+
+In Safari, navigate to your GitHub repository > Code.
+If icons/ already exists, open it and choose Add file > Upload files.
+If icons/ does not exist, create a new file named icons/.gitkeep, commit it, then open icons/ and upload the PNG/JPG assets.
+Commit to main, and let the deployment workflow start.
+
+Expected root paths:
+  icons/icon-192.png
+  icons/icon-512.png
+  icons/maskable-192.png
+  icons/maskable-512.png
+  icons/apple-touch-icon.png
+  icons/favicon-16.png
+  icons/favicon-32.png
+  icons/official-logo.jpg
+
+The GitHub Actions workflow should then pass the PWA icons check, provided all other dependencies are present. Verify Build AND Deploy; the repair is not a live deployment.
