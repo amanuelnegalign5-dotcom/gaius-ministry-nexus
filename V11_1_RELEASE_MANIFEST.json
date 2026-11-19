@@ -1,0 +1,173 @@
+{
+  "release": "GAIUS NEXUS v11.1 — Final Director & Analytics Release",
+  "base": "GAIUS_v11_Complete_Repository.zip",
+  "sourcePrivacy": "Private 16-goal plan JSON is deliberately outside GitHub ZIPs. Import in the secured Director workspace.",
+  "roleSecurity": "Both Directors share server-side bootstrap key plus role-bound email OTP. No key present in client.",
+  "baseFilesPreserved": 39,
+  "completeFilesBeforeManifest": 53,
+  "changedOrAddedFiles": 31,
+  "removedFiles": [],
+  "changedFiles": [
+    {
+      "path": ".github/workflows/static.yml",
+      "sha256": "f0e2bf583e17fee81d03e9808b01eaed7f7c5a0ee4c0cc03f06ad75002d972bc",
+      "change": "modified"
+    },
+    {
+      "path": ".gitignore",
+      "sha256": "a32910a1b082b130d204afaa10e575a7808d1c10b6e04792c23bd8a4a7a91408",
+      "change": "added"
+    },
+    {
+      "path": "GAIUS_Nexus_v11_1_SETUP_AMHARIC.md",
+      "sha256": "b750775e8232041746be99d477f6e01107aea154bc7809d7821c6cb8efbe1616",
+      "change": "added"
+    },
+    {
+      "path": "MIGRATION_ROLLBACK_V11_1.md",
+      "sha256": "ac2f7ec19f777a82ca730524298a23ba31de61606de5d4d7c29dc52bf77d06ab",
+      "change": "added"
+    },
+    {
+      "path": "QA_V11_1_RESULTS.md",
+      "sha256": "1ec3f67efeab1f188c5b7b14fa3762b34457e58a8cf03bdd1477a639aeba2965",
+      "change": "added"
+    },
+    {
+      "path": "README.md",
+      "sha256": "352a9ad740c637905889e49c59650a28ddfee68a5053a22f46b914c65237c4da",
+      "change": "modified"
+    },
+    {
+      "path": "README_V11_LEGACY.md",
+      "sha256": "54624c86fb61c2c3b41b0c378778724403cd4eb2c0ec408e6bc404f6ea45d004",
+      "change": "added"
+    },
+    {
+      "path": "V11_1_CHANGELOG.md",
+      "sha256": "58d2a09904b4c9a3b64fc8f8c72f343ac9c03f650ff952fee63635c91357bf46",
+      "change": "added"
+    },
+    {
+      "path": "gaius-app.js",
+      "sha256": "040447a100574655c745476a35d0de39e53090e26fa7c476547d2f2b0648352c",
+      "change": "modified"
+    },
+    {
+      "path": "gaius-nexus-analytics.js",
+      "sha256": "4159d104cc77967b546b84043a240f1d6b278b6fa4fd5524687ddbe8f0623583",
+      "change": "added"
+    },
+    {
+      "path": "gaius-recovery.js",
+      "sha256": "1667f130a2200c3dc3612971bf6d8366a110be306eba43a29cef61cff28dd06a",
+      "change": "modified"
+    },
+    {
+      "path": "gaius-store.js",
+      "sha256": "630e01087b195c67107087ffb1bb5ce0b5eecdba8854780eb0e555dede827d56",
+      "change": "modified"
+    },
+    {
+      "path": "gaius-v11-core.js",
+      "sha256": "37cbf103117e8e50c68ab1544cbe3a382d244499b518eff3ad0a29d521cebc2d",
+      "change": "modified"
+    },
+    {
+      "path": "gaius-v11-model.js",
+      "sha256": "fc5fe81c3791fe0ea342d3681b1effbed042c331f9f1539dd646805e6a7b3ef7",
+      "change": "modified"
+    },
+    {
+      "path": "gaius-v11-ui.js",
+      "sha256": "51c7ed5da8f40a6401b70db081f21c26cc74b402a9186bbb0e54df96be26002a",
+      "change": "modified"
+    },
+    {
+      "path": "gaius-v11.css",
+      "sha256": "c308dbea6e70e2418277fa48fcf33a732d1f8b866975ca24ba61cf4a8f0884e0",
+      "change": "modified"
+    },
+    {
+      "path": "gaius-worker.js",
+      "sha256": "d08a7cff2f1aedd9f21e75a9df4077255bddfa1303a451bbfdbb4f677fe57bfa",
+      "change": "modified"
+    },
+    {
+      "path": "icons/apple-touch-icon.png",
+      "sha256": "6b75ba736ee697fb2b3f4b613a1440461a505828559e97daaa60673792147b95",
+      "change": "added"
+    },
+    {
+      "path": "icons/favicon-16.png",
+      "sha256": "8e0669d075e5498b94cf9ce7705f7d34c25d5daadd258fa4fc9f2ed83692707f",
+      "change": "added"
+    },
+    {
+      "path": "icons/favicon-32.png",
+      "sha256": "8b8f95a93bc4b5eb49c9f7550b15f264ace54584f0b994b45b538bda6c742811",
+      "change": "added"
+    },
+    {
+      "path": "icons/icon-192.png",
+      "sha256": "457cfb02e39f3da2a1d1f1cb2cb59e97baf6bd518f1022258aeda40a95c3afb0",
+      "change": "modified"
+    },
+    {
+      "path": "icons/icon-512.png",
+      "sha256": "656cd998bcd334f5c7cc46be6a6b50dff38933f9813541dcb3067bec4344ca5d",
+      "change": "modified"
+    },
+    {
+      "path": "icons/maskable-192.png",
+      "sha256": "e86e23cc0e8b2950f0667c506f92e1afe35d9b1bb4319c8f22149c35bdcd0692",
+      "change": "added"
+    },
+    {
+      "path": "icons/maskable-512.png",
+      "sha256": "d7c0c190fe7d086f61f2efb1a51022fe7890eea31dc87052996af0ebcc38fca8",
+      "change": "added"
+    },
+    {
+      "path": "icons/official-logo.jpg",
+      "sha256": "2862ddced5bae1ab69800f339694d5317db2153c7c60738aa4ffd43fd11eab75",
+      "change": "added"
+    },
+    {
+      "path": "index.html",
+      "sha256": "e0cec3755e57095f8f5f2eae4018f52c5967ed823e8abec7e710fb2264721573",
+      "change": "modified"
+    },
+    {
+      "path": "manifest.webmanifest",
+      "sha256": "a80050720a6a3454ea7af4a999e327d3d8ba0124769230fb9ed68e6e8439abb6",
+      "change": "modified"
+    },
+    {
+      "path": "package.json",
+      "sha256": "d9e720a99c45c58a10c1a60d1cd13f34ded6632eac010b0307e1860722cfd880",
+      "change": "modified"
+    },
+    {
+      "path": "sw.js",
+      "sha256": "db80d2a4de00780545d364f1833487d5668fa23e5d8f2e1b01fe4d2426d97419",
+      "change": "modified"
+    },
+    {
+      "path": "tests/nexus.test.mjs",
+      "sha256": "3f6a90a52649ab30348bbf00acaf9c4c258288903ca818d1c76b3637d0501145",
+      "change": "added"
+    },
+    {
+      "path": "tests/v11.test.mjs",
+      "sha256": "6e15ee5e28d780021378569b3c4fa7d8d45df7e68ad9454c7ac3250962fd284a",
+      "change": "modified"
+    }
+  ],
+  "notVerified": [
+    "Live GitHub deployment",
+    "Cloudflare email and storage",
+    "iPhone Safari PWA",
+    "external Center App integration"
+  ]
+}

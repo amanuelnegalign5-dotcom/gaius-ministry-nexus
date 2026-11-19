@@ -1,0 +1,10 @@
+{
+  "name": "gaius-ministry-reviews",
+  "main": "gaius-worker.js",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": true,
+  "vars": { "ALLOWED_ORIGIN": "https://YOUR-GITHUB-USERNAME.github.io" },
+  "durable_objects": { "bindings": [{ "name": "WORKSPACE", "class_name": "MinistryWorkspace" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["MinistryWorkspace"] }],
+  "r2_buckets": [{ "binding": "MEDIA_BUCKET", "bucket_name": "gaius-v11-secure-files" }]
+}

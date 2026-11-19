@@ -1,0 +1,166 @@
+{
+  "version": "11.0.0",
+  "baseline": "GAIUS_v10_3_Full_Repository.zip",
+  "generated_at": "2026-11-19",
+  "baseline_files": 27,
+  "complete_files": 39,
+  "update_files": 22,
+  "new_files": [
+    "CENTER_APP_INTEGRATION_SPEC.md",
+    "GAIUS_v11_SETUP_AMHARIC.md",
+    "QA_V11_RESULTS.md",
+    "V11_FEATURE_STATUS.md",
+    "V11_RELEASE_MANIFEST.json",
+    "gaius-v11-core.js",
+    "gaius-v11-export.js",
+    "gaius-v11-model.js",
+    "gaius-v11-ui.js",
+    "gaius-v11.css",
+    "package.json",
+    "tests/v11.test.mjs"
+  ],
+  "changed_baseline_files": [
+    "KNOWN_LIMITATIONS.md",
+    "README.md",
+    "UPLOAD_TO_GITHUB.md",
+    "gaius-app.js",
+    "gaius-core.js",
+    "gaius-store.js",
+    "gaius-worker.js",
+    "index.html",
+    "sw.js",
+    "wrangler.jsonc"
+  ],
+  "preserved_unchanged_files": [
+    ".github/workflows/static.yml",
+    ".nojekyll",
+    "ADMIN_GOVERNANCE.md",
+    "DOCUMENT_SECURITY.md",
+    "GAIUS_v10_2_SETUP_AMHARIC.md",
+    "GAIUS_v10_3_ADMIN_DELETE_AMHARIC.md",
+    "GAIUS_v10_GitHub_Amharic.md",
+    "MIGRATION.md",
+    "PRIVACY_POLICY.md",
+    "QA_RESULTS.md",
+    "REPORT_SCHEMA.md",
+    "ROLE_PERMISSION_MATRIX.md",
+    "gaius-config.js",
+    "gaius-recovery.js",
+    "icons/icon-192.png",
+    "icons/icon-512.png",
+    "manifest.webmanifest"
+  ],
+  "removed_files": [],
+  "changes": [
+    {
+      "path": "CENTER_APP_INTEGRATION_SPEC.md",
+      "sha256": "07f7df0991690b3836b71b886e5187743119d7489775b8fe4585ac64ef12cb2b",
+      "bytes": 1349
+    },
+    {
+      "path": "GAIUS_v11_SETUP_AMHARIC.md",
+      "sha256": "3af7e3a5465605f82aca08153948f398bc01f9d0f29f6403b34b89871f0a40b0",
+      "bytes": 7081
+    },
+    {
+      "path": "KNOWN_LIMITATIONS.md",
+      "sha256": "9e584667b3d1809df50f5c39f16ce7e6a4df5dc59bb8a43bf5d1445cc8abe8fe",
+      "bytes": 5475
+    },
+    {
+      "path": "QA_V11_RESULTS.md",
+      "sha256": "3ddaa95ca3a30d54f7817d89d6a2f41c020a84c96f232304e10a8ade8b9165a4",
+      "bytes": 1477
+    },
+    {
+      "path": "README.md",
+      "sha256": "54624c86fb61c2c3b41b0c378778724403cd4eb2c0ec408e6bc404f6ea45d004",
+      "bytes": 3950
+    },
+    {
+      "path": "UPLOAD_TO_GITHUB.md",
+      "sha256": "ca98c09cf060b6f75122f55ebd564c49502e05d44bd730fb970c538ce24b7dfe",
+      "bytes": 2290
+    },
+    {
+      "path": "V11_FEATURE_STATUS.md",
+      "sha256": "cd9c6daa9085acbb3b133ef26e2cc86dec90317e4f0b57d54a8850a216e3f745",
+      "bytes": 2379
+    },
+    {
+      "path": "V11_RELEASE_MANIFEST.json",
+      "sha256": "7b3c4dcc626f06687fb2b4e07f974be49ee6fc7be6045b46f20746bb1d8784e9",
+      "bytes": 4659
+    },
+    {
+      "path": "gaius-app.js",
+      "sha256": "4384d7de3c9c5191eb295cc6f0a124fd0134d2b7494959ec7c9a69066b87d077",
+      "bytes": 72168
+    },
+    {
+      "path": "gaius-core.js",
+      "sha256": "84c56f6879c3a43951e608f873c1eb4e25bd079a37f91ba486cb915c03408174",
+      "bytes": 31124
+    },
+    {
+      "path": "gaius-store.js",
+      "sha256": "82a8894127f3eef1345c7309b402ed927f98e17d32857c9b8721b0fe19ec4686",
+      "bytes": 6065
+    },
+    {
+      "path": "gaius-v11-core.js",
+      "sha256": "1266b44afa7b4c2b16b841b4ad63dad0d4658aedf4f1dd98ec9387c36694146a",
+      "bytes": 11153
+    },
+    {
+      "path": "gaius-v11-export.js",
+      "sha256": "1e5c77e8c2218ed900c2eba3830f89077adefe4e796ce8a51af7b8bc8f145c90",
+      "bytes": 6915
+    },
+    {
+      "path": "gaius-v11-model.js",
+      "sha256": "22c57a233ce260fbb0d6787139cbb857931ff0d23400201d8b116eb30adc5d8f",
+      "bytes": 11092
+    },
+    {
+      "path": "gaius-v11-ui.js",
+      "sha256": "160c7edbf149c067ad676dab1bff7964176329f609f32180db186fb921580660",
+      "bytes": 30260
+    },
+    {
+      "path": "gaius-v11.css",
+      "sha256": "62e88ff88ac3203082808ccf2dc5aa840e18d3ed353b4c0632ae141a6bc66384",
+      "bytes": 3501
+    },
+    {
+      "path": "gaius-worker.js",
+      "sha256": "05fc6df6eb3a7b447c017455e66ae3d62deb7e948b9b4c1388f9ca9fc7c55f68",
+      "bytes": 10178
+    },
+    {
+      "path": "index.html",
+      "sha256": "749a69549eb9b22a9be42d22707a13d85459ebb41bc81ad85315c4783c404eee",
+      "bytes": 119625
+    },
+    {
+      "path": "package.json",
+      "sha256": "e6e9df55cd8ffff45620e303f704c48daa09df5212ec08abb9061037b66056f9",
+      "bytes": 130
+    },
+    {
+      "path": "sw.js",
+      "sha256": "5a57332113f1b35666a665c22a8d2af232bcdc674cbf8b2f20d0278da373e792",
+      "bytes": 1644
+    },
+    {
+      "path": "tests/v11.test.mjs",
+      "sha256": "c61de6ec178bc4d4ba4819be047bb6212dc0d2c028cc6fa4657523a63f613791",
+      "bytes": 6107
+    },
+    {
+      "path": "wrangler.jsonc",
+      "sha256": "9122bff8a40b9c908a325e9a151f11b143d1da5477ae55e24f95efc1caae77ce",
+      "bytes": 472
+    }
+  ]
+}
