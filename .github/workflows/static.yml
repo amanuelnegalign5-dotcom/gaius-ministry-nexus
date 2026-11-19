@@ -1,43 +1,71 @@
-# Simple workflow for deploying static content to GitHub Pages
-name: Deploy static content to Pages
+name: Deploy Gaius Nexus to Pages
 
 on:
-  # Runs on pushes targeting the default branch
   push:
-    branches: ["main"]
-
-  # Allows you to run this workflow manually from the Actions tab
+    branches: [main]
   workflow_dispatch:
 
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
-# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
 concurrency:
-  group: "pages"
+  group: pages
   cancel-in-progress: false
 
 jobs:
-  # Single deploy job since we're just deploying
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Prepare frontend-only site
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p site/icons
+          files=(
+            index.html manifest.webmanifest sw.js
+            gaius-config.js gaius-app.js gaius-store.js gaius-core.js
+            gaius-v11-core.js gaius-v11-model.js gaius-v11-ui.js
+            gaius-v11-export.js gaius-nexus-analytics.js gaius-v11.css
+          )
+          for file in "${files[@]}"; do
+            if [[ ! -f "$file" ]]; then
+              echo "::error::Required frontend file missing at repository root: $file"
+              exit 1
+            fi
+            cp "$file" site/
+          done
+          if ! compgen -G 'icons/*.png' > /dev/null; then
+            echo '::error::Missing PWA PNG icons in icons/'
+            exit 1
+          fi
+          cp icons/*.png site/icons/
+          if [[ -f icons/official-logo.jpg ]]; then
+            cp icons/official-logo.jpg site/icons/
+          fi
+          touch site/.nojekyll
+          echo 'Prepared public frontend files (private/backend sources excluded).'
+          find site -maxdepth 2 -type f | sort
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
   deploy:
+    needs: build
+    runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          # Upload entire repository
-          path: '.'
-      - name: Deploy to GitHub Pages
+      - name: Deploy uploaded artifact
         id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@v4
