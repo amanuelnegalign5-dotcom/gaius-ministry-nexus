@@ -311,6 +311,18 @@ async function sync(){if(!navigator.onLine)throw Error('offline');const drafts=a
 }
 root.addEventListener('submit',e=>{e.preventDefault();withBusy(async()=>{
  if(e.target.id==='v11form')await saveRecord();
+ if(e.target.id==='nexusSourceImport'){
+  if(my().role!=='country_director'||!store.shared)throw Error('directorPrivateImportRequired');
+  const file=$('nexusSourceFile')?.files?.[0];
+  if(!file||file.size>300000)throw Error('sourceDocumentBundleInvalid');
+  const bundle=JSON.parse(await file.text());
+  if(bundle?.schema!=='gaius-private-source-documents-v1'||!Array.isArray(bundle.documents)||bundle.documents.length!==3)throw Error('invalidSource');
+  if(!confirm(text('ሦስቱን የWord ሰነዶች ጽሑፍ ወደ የተጠበቀ መዝገብ ልጫን?','Import three extracted source documents into the protected workspace?')))return;
+  const result=await store.command('v11.importSourceDocs',{bundle});
+  kind='manuals';editing=null;section='records';
+  await update();
+  alertMsg(text('አዲስ የተጫኑ','Imported')+': '+result.count+' · '+text('ቀድሞ የነበሩ','Already present')+': '+result.skipped.length);
+ }
  if(e.target.id==='nexusPlanImport'){
   if(!store.shared)throw Error(text('የግል ዕቅድ ለማስገባት የተጠበቀ Backend ያስፈልጋል','Secure backend is required for private import'));
   const file=$('nexusPlanFile')?.files?.[0];if(!file||file.size>150000)throw Error('Invalid private plan file');
