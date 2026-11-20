@@ -30,8 +30,8 @@ test('mobile layout eliminates double-sticky navigation and preserves logout con
  assert.match(css,/#app\.nexus-mode \.bar \.actions/);
 });
 test('PWA cache and static asset versions invalidate old iPhone interface',()=>{
- assert.match(sw,/11\.1\.4-source-brand/);
- assert.match(html,/gaius-v11\.css\?v=11\.1\.4/);
- assert.match(html,/gaius-v11-ui\.js\?v=11\.1\.4/);
+ assert.match(sw,/11\.1\.5-file-picker/);
+ assert.match(html,/gaius-v11\.css\?v=11\.1\.5/);
+ assert.match(html,/gaius-v11-ui\.js\?v=11\.1\.5/);
  assert.match(html,/gaius-app\.js\?v=11\.1\.4/);
 });
