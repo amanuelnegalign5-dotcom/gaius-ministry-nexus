@@ -1,8 +1,24 @@
+
 {
   "name": "gaius-nexus-api",
   "main": "gaius-worker.js",
   "compatibility_date": "2026-09-01",
   "workers_dev": true,
-  "vars": { "ALLOWED_ORIGIN": "https://github.com/amanuelnegalign5-dotcom" },
-  "durable_objects": { "bindings": [{ "name": "WORKSPACE", "class_name": "MinistryWorkspace" }] },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["MinistryWorkspace"] }],
+  "vars": {
+    "ALLOWED_ORIGIN": "https://amanuelnegalign5-dotcom.github.io"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "WORKSPACE",
+        "class_name": "MinistryWorkspace"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["MinistryWorkspace"]
+    }
+  ]
+}
