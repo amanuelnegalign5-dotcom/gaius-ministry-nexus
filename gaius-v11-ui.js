@@ -45,6 +45,12 @@ async function open(){
  opening=true;
  const epoch=++viewEpoch;
  launch.disabled=true;
+ // Replace the legacy page with a stable loading surface immediately:
+ // director data is revalidated before protected records are drawn.
+ app.classList.add('nexus-mode');
+ root.hidden=false;
+ oldMain.style.display='none';
+ root.innerHTML='<div class="v11wrap"><div class="v11box" role="status" aria-live="polite">Loading Gaius Nexus… / ጋይዮስ ኔክሰስ እየተከፈተ ነው…</div></div>';
  try{
   await load();
   if(epoch!==viewEpoch)return; // user signed out or closed while data loaded
