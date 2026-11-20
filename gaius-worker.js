@@ -110,7 +110,11 @@ export class MinistryWorkspace {
         if(f?.key&&this.env.MEDIA_BUCKET)await this.env.MEDIA_BUCKET.delete(f.key);
         return json(result);
       }
-      return json(await handle(this.db,route,data,{token,bootstrapAuthorized}));
+      if(route==='state'){
+        const snapshot=await handle(this.db,route,data,{token,bootstrapAuthorized});
+        return json({...snapshot,services:{mediaUploads:!!this.env.MEDIA_BUCKET}});
+       }
+       return json(await handle(this.db,route,data,{token,bootstrapAuthorized}));
     }catch(e){return e instanceof AppError||Number.isInteger(e?.status)?json({error:e.message},e.status):json({error:'serviceError'},500);}
   }
   async upload(request){
