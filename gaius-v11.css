@@ -24,3 +24,36 @@
 .nexusaction span{font-size:22px}.nexusaction:hover{background:#edf8ee}
 .v11record .v11status{background:#e8f5e9;color:#265a40}
 @media(max-width:570px){.v11root{padding-top:12px}.v11top{gap:9px}.v11logo{height:53px;width:53px;border-radius:13px}.v11top p{font-size:.8rem}.v11tile{padding:12px}.v11nav{margin:0 -7px}.nexusbar{grid-template-columns:85px 1fr 54px;font-size:.82rem}.nexusresponsibilities{grid-template-columns:1fr}}
+
+/* Director workspace is a separate page mode, not another layer over the
+   legacy sticky header and tab strip. Keep legacy controls intact for return. */
+#app.nexus-mode .bar{position:relative;top:auto;z-index:auto;backdrop-filter:none}
+#app.nexus-mode .bar .tabs,
+#app.nexus-mode .bar .modeLine{display:none!important}
+#app.nexus-mode .bar .wrap{padding:7px 12px}
+#app.nexus-mode .bar .profile{min-width:0;flex:1}
+#app.nexus-mode .bar .actions{min-width:0;align-items:center;justify-content:flex-end}
+#app.nexus-mode #v11launch{background:#dff3e7;border-color:#a9d3b5;color:#146246}
+#app.nexus-mode .v11root{position:relative;clear:both;isolation:isolate;min-width:0}
+#app.nexus-mode .v11nav{top:0;z-index:3}
+#app.nexus-mode .v11content{min-width:0;overflow-wrap:anywhere}
+#app.nexus-mode .v11record,
+#app.nexus-mode .v11box{min-width:0;max-width:100%}
+#app.nexus-mode .v11box form,
+#app.nexus-mode .v11fields{min-width:0}
+@media(max-width:700px){
+ #app.nexus-mode .bar .top{display:flex;flex-direction:column;align-items:stretch;gap:5px}
+ #app.nexus-mode .bar .profile{flex:initial;align-items:center;min-width:0}
+ #app.nexus-mode .bar .profile .avatar{width:39px;height:39px}
+ #app.nexus-mode .bar .profile #who{font-size:12px;line-height:1.35;overflow-wrap:anywhere}
+ #app.nexus-mode .bar .actions{margin-top:2px;display:flex;justify-content:flex-start;flex-wrap:wrap;gap:6px}
+ #app.nexus-mode .bar .actions .btn{min-height:39px;padding:7px 10px;font-size:14px}
+ #app.nexus-mode .bar .actions select{max-width:135px;min-height:39px;padding:5px}
+ #app.nexus-mode .v11root{padding-top:8px}
+ /* iOS dynamic browser bars and a second sticky nav conflict on scroll. */
+ #app.nexus-mode .v11nav{position:static;top:auto;z-index:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
+ #app.nexus-mode .v11top h1{font-size:1.45rem}
+ #app.nexus-mode .v11wrap{padding:0 10px}
+ #app.nexus-mode .v11tile{min-width:0;overflow-wrap:anywhere}
+ #app.nexus-mode .v11actions button{max-width:100%;white-space:normal}
+}
