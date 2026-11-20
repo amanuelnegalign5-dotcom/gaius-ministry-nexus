@@ -176,7 +176,7 @@ function importDirectorPlan(db,u,p){
 // Authenticated Director import. Only extracted text traverses the backend;
 // original DOCX files and this private bundle are never committed to Pages.
 const SOURCE_DOCUMENTS={
- 'gaius-ministry-manual-en-2026':{filename:'GAIUS MINISTRY(1).docx',kind:'manual',scope:'organization'},
+ 'gaius-ministry-manual-en-2026':{filename:'GAIUS MINISTRY(1).docx',kind:'ministry',scope:'organization'},
  'gaius-teaching-roadmap-am-2026':{filename:'የትምህርት ሂደት.docx',kind:'teaching',scope:'organization'},
  'gaius-country-director-six-month-plan-2026':{filename:'gaius_director_6_month_plan(1).docx',kind:'other',scope:'personal'}
 };
