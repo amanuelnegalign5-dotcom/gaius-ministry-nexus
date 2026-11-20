@@ -63,3 +63,13 @@
 .v11original{margin-top:12px;border:1px solid #cbdcce;border-radius:10px;padding:9px}
 #nexusSourceImport{display:grid;gap:10px;max-width:100%}
 #nexusSourceFile{width:100%;max-width:100%;min-width:0}
+
+/* Accessible file inputs: keep the real iOS picker visible and tappable. */
+.v11picker{position:relative;z-index:1;max-width:100%;min-width:0;padding:14px;border:1px solid #b4d0bd;border-radius:13px;background:#f5faf6;margin:12px 0}
+.v11pickerLabel{display:block!important;margin:0 0 9px!important;color:#174f39!important;font-weight:750!important;cursor:pointer!important}
+.v11pickerInput{display:block!important;visibility:visible!important;opacity:1!important;position:relative!important;pointer-events:auto!important;z-index:2;width:100%!important;max-width:100%;min-height:52px;padding:12px;background:#fff;border:1px solid #8ead9c;border-radius:10px;font-size:16px;cursor:pointer}
+.v11pickerInput:focus-visible{outline:3px solid #1f7958;outline-offset:2px}
+.v11pickerStatus{font-size:.9rem;overflow-wrap:anywhere;margin:9px 0 3px;color:#295b44}
+.v11pickerStatus.v11pickerError{color:#a12418;font-weight:700}
+.v11pickerHelp{font-size:.83rem;line-height:1.5;color:#526b5c;margin:0}
+@media(max-width:700px){.v11picker{padding:10px}.v11pickerInput{min-height:54px}}
