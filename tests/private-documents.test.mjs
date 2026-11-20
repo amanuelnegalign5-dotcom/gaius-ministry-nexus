@@ -62,7 +62,7 @@ test('PWA launcher references the official GAIUS logo in both mobile and desktop
  assert.match(html,/apple-touch-icon\.png\?v=11\.1\.4/);
  assert.match(html,/manifest\.webmanifest\?v=11\.1\.4/);
  assert.match(html,/favicon-32\.png\?v=11\.1\.4/);
- assert.match(sw,/11\.1\.4-source-brand/);
+ assert.match(sw,/11\.1\.5-file-picker/);
 });
 test('private original texts are never committed to public source files',()=>{
  const ui=readFileSync(new URL('../gaius-v11-ui.js',import.meta.url),'utf8');
