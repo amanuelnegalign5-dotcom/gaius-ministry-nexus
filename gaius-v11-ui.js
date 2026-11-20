@@ -32,9 +32,38 @@ async function load(){
  }
  return state;
 }
-async function open(){try{await load();active=true;root.hidden=false;oldMain.style.display='none';render();}catch(e){active=false;alert(e.message);}}
+const directorRole=role=>role==='country_director'||role==='international_director';
+let autoOpenedDirectorId=null;
+async function open(){
+ try{
+  await load();
+  if(directorRole(my().role)&&caps().director)section='director';
+  active=true;
+  root.hidden=false;
+  oldMain.style.display='none';
+  await render();
+  root.scrollIntoView({block:'start',behavior:'auto'});
+ }catch(e){
+  active=false;
+  root.hidden=true;
+  oldMain.style.display='';
+  autoOpenedDirectorId=null;
+  alert(text('የDirector Workspace መክፈት አልተቻለም፦ ','Could not open Director workspace: ')+(e?.message||String(e)));
+ }
+}
 function close(){active=false;root.hidden=true;oldMain.style.display='';}
-launch.onclick=()=>active?close():open();
+launch.onclick=()=>active?close():void open();
+// The Director lands in their Command Center on successful login, without losing
+// any preserved v10 pages. Other roles keep their existing restricted landing pages.
+window.addEventListener('gaius:nexus-session-ready',event=>{
+ const identity=event.detail||{};
+ if(!directorRole(identity.role)||!identity.id||autoOpenedDirectorId===identity.id)return;
+ autoOpenedDirectorId=identity.id;
+ void open();
+});
+window.addEventListener('gaius:nexus-session-cleared',()=>{
+ close();root.replaceChildren();state=null;autoOpenedDirectorId=null;section='overview';
+});
 app.addEventListener('click',e=>{if(active&&(e.target.closest('button.nav')||e.target.closest('#logout')))close();},true);
 window.addEventListener('online',()=>{if(active){alertMsg(text('ኢንተርኔት ተመልሷል፤ ያልተላኩ ረቂቆችን መላክ ይችላሉ','Online: pending drafts can now sync'));}});
 const my=()=>state?.me||{};const caps=()=>state?.v11?.capabilities||{};const records=()=>state?.v11?.records||[];
@@ -101,7 +130,7 @@ function reportFields(rec){
  return common.map(f=>f[0]==='departmentType'?`<label class="v11field"><span>${text('የክፍሉ የሪፖርት ዓይነት','Department template')}</span><select id="v11DepartmentType" data-field="departmentType">${opts([['','—'],...HQ_UNITS.map(u=>[u.id,text(u.am,u.en)])],unit)}</select></label>`:field(f,rec?.data?.[f[0]]??'')).join('')+
  `<div id="v11DeptExtras" class="v11extras">${(NEXUS_DEPARTMENT_FIELDS[unit]||[]).map(f=>field(f,rec?.data?.[f[0]]??'')).join('')}</div>`;
 }
-function formHTML(rec){return `<div class="v11box><h2>${rec?text('ረቂቅ ማስተካከያ','Edit draft'):text('አዲስ መዝገብ','New record')} — ${text(V11_KINDS[kind].am,V11_KINDS[kind].en)}</h2><p class="v11guide">${text('እቅዶችና ሪፖርቶች መጀመሪያ እንደ ረቂቅ ይቀመጣሉ፤ ለማጽደቅ በተለየ አዝራር ያስገቡ። ያለ ኢንተርኔት ረቂቆች በዚህ መሣሪያ ይቀመጣሉ።','Save drafts first, then submit them for approval. Offline drafts remain on this device until synced.')}</p><form id="v11form"><div class="v11fields">${scopeForm(rec)}${reportFields(rec)}</div><div class="v11actions"><button class="btn" type="submit">${text('ረቂቅ አስቀምጥ','Save draft')}</button><button class="btn ghost" type="button" data-v="cancel">${text('ሰርዝ','Cancel')}</button></div></form></div>`;}
+function formHTML(rec){return `<div class="v11box"><h2>${rec?text('ረቂቅ ማስተካከያ','Edit draft'):text('አዲስ መዝገብ','New record')} — ${text(V11_KINDS[kind].am,V11_KINDS[kind].en)}</h2><p class="v11guide">${text('እቅዶችና ሪፖርቶች መጀመሪያ እንደ ረቂቅ ይቀመጣሉ፤ ለማጽደቅ በተለየ አዝራር ያስገቡ። ያለ ኢንተርኔት ረቂቆች በዚህ መሣሪያ ይቀመጣሉ።','Save drafts first, then submit them for approval. Offline drafts remain on this device until synced.')}</p><form id="v11form"><div class="v11fields">${scopeForm(rec)}${reportFields(rec)}</div><div class="v11actions"><button class="btn" type="submit">${text('ረቂቅ አስቀምጥ','Save draft')}</button><button class="btn ghost" type="button" data-v="cancel">${text('ሰርዝ','Cancel')}</button></div></form></div>`;}
 function card(r){const def=V11_KINDS[r.kind]||{},data=r.data||{};const title=data.title||data.name||data.activity||data.topic||data.member||(r.kind==='visits'?records().find(x=>x.id===data.centerRecordId)?.data?.name:'')||def.am||r.kind;
  const allowEdit=(r.status==='draft'||r.status==='revision_requested')&&(caps().director||r.ownerId===my().id);
  const canReview=(caps().director||caps().canApprove)&&r.status==='submitted'&&r.scopeType!=='personal';
