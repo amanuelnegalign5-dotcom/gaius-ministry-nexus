@@ -348,7 +348,7 @@ root.addEventListener('change',e=>{
   const file=e.target.files?.[0],notice=root.querySelector('[data-file-status="'+e.target.id+'"]');
   if(notice){
    const json=e.target.id==='nexusSourceFile'||e.target.id==='nexusPlanFile';
-   const wrong=!!file&&json&&!/\\.json$/i.test(file.name);
+   const wrong=!!file&&json&&!/\.json$/i.test(file.name);
    notice.textContent=!file?text('ፋይል አልተመረጠም','No file selected'):wrong?text('JSON ብቻ ምረጥ፦ ','Choose a .json file: ')+file.name:text('የተመረጠ፦ ','Selected: ')+file.name+' ('+Math.ceil(file.size/1024)+' KB)';
    notice.classList.toggle('v11pickerError',wrong);
   }
