@@ -1,0 +1,27 @@
+name: GAIUS Nexus role-scope regression tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [fix/role-scope-isolation-v11]
+
+permissions:
+  contents: read
+
+jobs:
+  security-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check source syntax
+        run: |
+          node --check gaius-core.js
+          node --check gaius-v11-core.js
+          node --check gaius-app.js
+          node --check gaius-v11-ui.js
+      - name: Run role isolation and existing regression tests
+        run: npm test

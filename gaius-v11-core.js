@@ -16,35 +16,50 @@ function belongs(u,r){
  if(r.scopeType==='hq')return !!u.department&&String(u.department)===String(r.scopeId);
  return r.scopeType==='organization';
 }
-const highVisibility=new Set(['followups','centerAttendance','succession','board','advisoryMeetings','manuals']);
+// Default-deny, unit-scoped policy. A permission flag does not erase the user's unit boundary.
+const HQ_LEADER_ROLES=new Set(['media_leader','followup_leader','service_leader','counseling_leader','research_leader','event_leader','admin_finance']);
+const CENTER_ROLES=new Set(['center_leader','center_department_leader']);
+const unit=x=>String(x??'').trim().toLowerCase();
+const sameUnit=(a,b)=>!!unit(a)&&unit(a)===unit(b);
+const hqLeader=u=>HQ_LEADER_ROLES.has(u?.role)&&!!u.department&&!u.center;
+const centerMember=u=>CENTER_ROLES.has(u?.role)&&!!u.center;
+const centerDepartmentMatches=(u,r)=>sameUnit(u.department,r.data?.departmentType||r.data?.department||r.data?.unit);
+const sharedStatus=r=>['approved','submitted'].includes(r.status);
 function canRead(u,r){
  if(!active(u))return false;
  if(r.scopeType==='personal')return r.ownerId===u.id;
- if(r.kind==='board'||r.kind==='advisoryMeetings')return isDirector(u)||granted(u,'v11:oversight');
- if(r.kind==='manuals')return isDirector(u)||granted(u,'v11:edit_manual');
- if(r.kind==='succession')return isDirector(u)||r.data?.leaderId===u.id||r.ownerId===u.id;
- if(r.kind==='followups'||r.kind==='centerAttendance')return isDirector(u)||granted(u,'v11:oversight')||r.ownerId===u.id;
- if(isDirector(u)||granted(u,'v11:oversight'))return true;
- if(r.ownerId===u.id)return true;
- if(r.scopeType==='center' && ['monthly','plans6','documents','mentorship','succession','centerAttendance'].includes(r.kind))
-   return u.center===r.scopeId && u.role==='center_leader' && ['approved','submitted'].includes(r.status);
- if(r.status==='draft'||r.status==='rejected'||r.status==='revision_requested')return false;
- if(r.kind==='updates'&&r.status==='approved')return true;
- if(r.scopeType==='organization')return r.status==='approved';
- return belongs(u,r) && r.status==='approved';
+ if(isDirector(u))return true;
+ // Publicly approved updates can be viewed by leaders, not unrelated staff.
+ if(r.scopeType==='organization'){
+  if(r.kind==='centers')return centerMember(u)&&sameUnit(u.center,r.data?.name)&&r.status==='approved';
+  return r.kind==='updates'&&r.status==='approved'&&(hqLeader(u)||centerMember(u));
+ }
+ if(r.kind==='board'||r.kind==='advisoryMeetings'||r.kind==='visits'||r.kind==='directorGoals')return false;
+ if(r.kind==='manuals')return granted(u,'v11:edit_manual')&&belongs(u,r);
+ if(r.kind==='succession'&&r.ownerId!==u.id&&r.data?.leaderId!==u.id)return false;
+ if(r.scopeType==='center'){
+  if(!centerMember(u)||!sameUnit(u.center,r.scopeId))return false;
+  if(r.ownerId===u.id)return true;
+  if(u.role==='center_leader')return sharedStatus(r);
+  return centerDepartmentMatches(u,r)&&sharedStatus(r);
+ }
+ if(r.scopeType==='hq'){
+  if(!hqLeader(u)||!sameUnit(u.department,r.scopeId))return false;
+  return r.ownerId===u.id||sharedStatus(r);
+ }
+ return false;
 }
 function canCreate(u,k,scopeType,scopeId){
  if(!active(u)||!V11_KINDS[k])return false;
- if(V11_KINDS[k].personalOnly)return scopeType==='personal'&&u.role==='country_director'&&scopeId===u.id;
- if(scopeType==='personal')return isDirector(u)&&!V11_KINDS[k].centerOnly;
+ if(V11_KINDS[k].personalOnly)return isDirector(u)&&scopeType==='personal'&&scopeId===u.id&&u.role==='country_director';
+ if(scopeType==='personal')return isDirector(u)&&scopeId===u.id&&!V11_KINDS[k].centerOnly;
  if(isDirector(u))return true;
- if(V11_KINDS[k].fullOnly)return false;
+ if(V11_KINDS[k].fullOnly||k==='centers')return false;
  if(V11_KINDS[k].fullOrPermission&&!granted(u,V11_KINDS[k].fullOrPermission))return false;
- if(V11_KINDS[k].centerOnly){return scopeType==='center'&&!!u.center&&scopeId===u.center;}
  if(k==='followups'||k==='centerAttendance')return false;
- if(scopeType==='center')return !!u.center&&scopeId===u.center;
- if(scopeType==='hq')return !!u.department&&scopeId===u.department;
- if(scopeType==='organization')return granted(u,'v11:publish')&&['updates','teaching','initiatives'].includes(k);
+ if(scopeType==='center')return centerMember(u)&&sameUnit(scopeId,u.center)&&!V11_KINDS[k].fullOnly;
+ if(scopeType==='hq')return hqLeader(u)&&sameUnit(scopeId,u.department)&&!V11_KINDS[k].centerOnly;
+ if(scopeType==='organization')return granted(u,'v11:publish')&&['updates'].includes(k);
  return false;
 }
 function validate(k,input){
@@ -80,6 +95,11 @@ function save(db,u,p){
   check(isDirector(u)||old.ownerId===u.id,'forbidden');
  }
  const data=validate(kind,p.data||{});
+ // A center department cannot label or publish reports for a different department.
+ if(!isDirector(u)&&scopeType==='center'&&u.role==='center_department_leader'&&kind==='monthly'){
+  check(!data.departmentType||sameUnit(data.departmentType,u.department),'departmentScopeMismatch');
+  data.departmentType=u.department;
+ }
  if(kind==='visits'){
    check(u.role==='country_director'&&scopeType==='personal'&&scopeId===u.id,'forbidden');
    const center=db.one('v11_records',data.centerRecordId);check(center&&center.kind==='centers'&&center.status!=='archived','centerNotFound',400);
@@ -109,7 +129,7 @@ function updateState(db,u,p){
  if(decision==='submit')check(old.ownerId===u.id||isDirector(u),'forbidden');
  else if(decision==='revise')check(old.ownerId===u.id||isDirector(u),'forbidden');
  else if(decision==='archive')check(isDirector(u)||old.ownerId===u.id,'forbidden');
- else check(authority,'forbidden');
+ else {check(authority,'forbidden');if(!isDirector(u))check(old.ownerId!==u.id,'forbidden');}
  const allowed={submit:['draft','revision_requested'],approve:['submitted'],revision_requested:['submitted'],reject:['submitted'],archive:['draft','approved','rejected','revision_requested'],revise:['approved']};
  check(allowed[decision]?.includes(old.status),'invalidTransition',409);
  if(decision==='revision_requested')check(!!note,'required:note',400);
@@ -174,30 +194,34 @@ export function v11Command(db,u,action,p){
  fail('unknown',404);
 }
 export function v11State(db,u){
+ const scopeType=isDirector(u)?'organization':centerMember(u)?'center':hqLeader(u)?'hq':null;
+ const scopeId=scopeType==='center'?u.center:scopeType==='hq'?u.department:'org';
+ const allowedKinds=isDirector(u)?V11_KINDS_LIST.filter(k=>!V11_KINDS[k].personalOnly||u.role==='country_director'):scopeType?V11_KINDS_LIST.filter(k=>canCreate(u,k,scopeType,scopeId)):[];
  return {v11:{records:db.all('v11_records').filter(r=>canRead(u,r)),
-  capabilities:{director:isDirector(u),oversight:granted(u,'v11:oversight'),canApprove:granted(u,'v11:approve'),canPublish:granted(u,'v11:publish'),canEditManual:granted(u,'v11:edit_manual')},
+  capabilities:{director:isDirector(u),oversight:isDirector(u),canApprove:granted(u,'v11:approve'),canPublish:granted(u,'v11:publish'),canEditManual:granted(u,'v11:edit_manual'),allowedKinds,canUploadFile:!!scopeType},
   files:db.all('v11_files').filter(f=>canReadFile(u,f)).map(f=>({id:f.id,name:f.name,type:f.type,size:f.size,scopeType:f.scopeType,scopeId:f.scopeId,ownerId:f.ownerId,status:f.status,createdAt:f.createdAt}))}};
 }
 export function canReadFile(u,f){
- if(!active(u))return false;
- if(f.status==='removed')return false;
+ if(!active(u)||f.status==='removed')return false;
  if(f.scopeType==='personal')return f.ownerId===u.id;
- if(f.ownerId===u.id)return true;
- if(f.status!=='approved')return isDirector(u)||granted(u,'v11:approve');
- if(isDirector(u)||granted(u,'v11:oversight'))return true;
- if(f.scopeType==='organization')return true;
- return belongs(u,f);
+ if(isDirector(u))return true;
+ if(f.scopeType==='center')return centerMember(u)&&sameUnit(u.center,f.scopeId)&&
+   (f.ownerId===u.id||(u.role==='center_leader'&&f.status==='approved'));
+ if(f.scopeType==='hq')return hqLeader(u)&&sameUnit(u.department,f.scopeId)&&
+   (f.ownerId===u.id||f.status==='approved');
+ return false;
 }
 export function canUploadFile(u,scopeType,scopeId){
  if(!active(u)||!validScope(scopeType))return false;
  if(scopeType==='personal')return isDirector(u)&&scopeId===u.id;
  if(isDirector(u))return true;
- if(scopeType==='organization')return true; // anyone may submit; never auto-publish
- if(scopeType==='center')return !!u.center&&u.center===scopeId;
- return !!u.department&&u.department===scopeId;
+ if(scopeType==='center')return centerMember(u)&&sameUnit(u.center,scopeId);
+ if(scopeType==='hq')return hqLeader(u)&&sameUnit(u.department,scopeId);
+ return false;
 }
 export function approveFile(db,u,id,decision){
  check(isDirector(u)||granted(u,'v11:approve'),'forbidden');
  const f=db.one('v11_files',clean(id));check(f,'missing',404);check(['approved','rejected','removed'].includes(decision),'invalidTransition',400);
+ if(!isDirector(u))check(canReadFile(u,f)&&f.ownerId!==u.id,'forbidden');
  const next={...f,status:decision,updatedAt:at(),reviewerId:u.id};db.put('v11_files',next);audit(db,u,'v11.file.'+decision,next);return {id:next.id};
 }

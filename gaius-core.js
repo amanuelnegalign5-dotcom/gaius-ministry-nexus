@@ -9,7 +9,9 @@ export const roleDepartments = {
   center_leader:'',potential_center_leader:'',center_department_leader:'',potential_department_leader:'',volunteer:'',hq_staff:''
 };
 export const directors = ['country_director','international_director'];
-const reporters = Object.keys(roleDepartments).filter(k => !['assisting_staff','international_staff','prayer_staff'].includes(k));
+const hqReportingRoles=new Set(['media_leader','followup_leader','service_leader','counseling_leader','research_leader','event_leader','admin_finance']);
+const centerReportingRoles=new Set(['center_leader','center_department_leader']);
+const reporters=[...hqReportingRoles,...centerReportingRoles];
 export const permissions = ['reports','review_reports','review_plans','comments','attendance','announcements','projects','documents','manage_users','v11:oversight','v11:approve','v11:publish','v11:teaching','v11:edit_manual'];
 export const sourceIds = ['event','counseling','research','followup','service','media'];
 export const seedPeople = [
@@ -22,8 +24,20 @@ const own = (o,k) => Object.prototype.hasOwnProperty.call(o,k);
 export const stateOf = u => u?.accountStatus || 'active'; // Existing v10 accounts were admitted at registration.
 export const full = u => !!u && stateOf(u)==='active' && (directors.includes(u.role) || u.fullAdmin===true);
 export const permit = (u,p) => !!u && stateOf(u)==='active' && (full(u) || (u.adminPermissions||[]).includes(p));
-export const seesReports = u => !!u && (reporters.includes(u.role) || ['reports','review_reports','comments'].some(p=>permit(u,p)));
-export const writesReports = u => reporters.includes(u?.role) || permit(u,'reports');
+export const seesReports = u => !!u && stateOf(u)==='active' && (full(u)||reporters.includes(u.role));
+export const writesReports = u => seesReports(u);
+const sameUnit=(a,b)=>!!String(a||'').trim()&&String(a||'').trim().toLowerCase()===String(b||'').trim().toLowerCase();
+function canSeeLegacyItem(u,r,kind){
+ if(stateOf(u)!=='active')return false;
+ if(full(u))return true;
+ if(kind==='report'&&r.original)return false;
+ if(u.center){
+  if(kind!=='report'||!centerReportingRoles.has(u.role)||!sameUnit(u.center,r.center))return false;
+  return u.role==='center_leader'||sameUnit(u.department,r.department);
+ }
+ return hqReportingRoles.has(u.role)&&!!u.department&&sameUnit(u.department,r.department)&&
+   (kind==='plan'||!r.center);
+}
 export const managesAttendance = u => permit(u,'attendance') || ['admin_finance','monday_leader'].includes(u?.role);
 export const publishes = u => permit(u,'announcements') || ['admin_finance','monday_leader'].includes(u?.role);
 export const now = () => new Date().toISOString();
@@ -73,7 +87,13 @@ function profileData(data,previous={},complete=false){
 }
 function consent(data){required(Array.isArray(data.accepted) && data.accepted.length===12 && data.accepted.every(v=>v===true),'consentRequired');}
 function privileged(u){return directors.includes(u.role)||u.fullAdmin===true||!!u.adminPermissions?.length;}
-export function canManage(actor,target){return permit(actor,'manage_users') && (full(actor)||!privileged(target));}
+export function canManage(actor,target){
+ if(!permit(actor,'manage_users'))return false;
+ if(full(actor))return true;
+ if(privileged(target))return false;
+ if(actor.center)return !!target.center&&sameUnit(actor.center,target.center);
+ return !!actor.department&&!target.center&&sameUnit(actor.department,target.department);
+}
 function keepOne(db,old,next){
   if(full(old)&&!full(next)) need(allActiveAdmins(db).some(x=>x.id!==old.id),'lastAdmin',409);
 }
@@ -197,6 +217,7 @@ function manageAccount(db,actor,action,data,secret,hashes){
   if(action==='account.add'){
     const u=timestampUser(data,secret); required(u.name,'required');uniqueName(db,u.username);
     need(!directors.includes(u.role),'directorUseTransfer');
+    if(!full(actor))need(canManage(actor,u),'forbidden');
     Object.assign(u,{accountStatus:'active',onboarding:true,createdBy:actor.id,approvedBy:actor.id,approvedAt:now()});
     put(db,'users',u);audit(db,actor,action,u.id);return {id:u.id};
   }
@@ -235,7 +256,7 @@ function reviewedRecord(db,kind,id){
   required(['plan','report'].includes(kind),'unknown');
   return kind==='report'&&sourceIds.includes(id)?{id,original:true}:exists(db.one(reviewKind(kind),id));
 }
-function canWriteItem(u,k){return k==='plan'||writesReports(u);}
+function canWriteItem(u,k){return k==='plan'?full(u)||(hqReportingRoles.has(u.role)&&!!u.department&&!u.center):writesReports(u);}
 function canEditItem(u,r,k,review){
   if(r.original)return false;
   return full(u)||(canWriteItem(u,k)&&r.userId===u.id&&['draft','revision_requested'].includes(flow(r,review)));
@@ -246,7 +267,7 @@ function saveItem(db,u,kind,d){
   need(canWriteItem(u,kind));const bucket=reviewKind(kind);
   const old=d.id?reviewedRecord(db,kind,d.id):null;
   const review=old?db.one('reviews',kind+':'+old.id):null;
-  if(old){need(canEditItem(u,old,kind,review));fresh(old,d.version);fresh(review,d.reviewVersion);}
+  if(old){need(canSeeLegacyItem(u,old,kind)&&canEditItem(u,old,kind,review));fresh(old,d.version);fresh(review,d.reviewVersion);}
   required(['draft','submitted','delayed'].includes(d.status),'invalidTransition');
   let fields;
   if(kind==='report'){
@@ -259,6 +280,12 @@ function saveItem(db,u,kind,d){
     required(fields.title && fields.objective,'planRequired');
     if(fields.projectId && fields.projectId!==old?.projectId)exists(db.one('projects',fields.projectId));
   }
+  if(!full(u)){
+    if(kind==='plan')need(!u.center&&sameUnit(u.department,fields.department),'forbidden');
+    else if(u.center)need(centerReportingRoles.has(u.role)&&sameUnit(u.center,fields.center)&&
+      (u.role==='center_leader'||sameUnit(u.department,fields.department)),'forbidden');
+    else need(hqReportingRoles.has(u.role)&&sameUnit(u.department,fields.department)&&!fields.center,'forbidden');
+  }
   const time=now(),submission=d.status==='draft'?'draft':'submitted';
   const r={...old,...fields,id:old?.id||crypto.randomUUID(),userId:old?.userId||u.id,submitterName:old?.submitterName||u.name,
     submitterRole:old?.submitterRole||u.role,month:month(d.month),status:d.status,submission,original:false,
@@ -266,7 +293,7 @@ function saveItem(db,u,kind,d){
   put(db,bucket,r);audit(db,u,kind+'.'+(old?'edit':submission),r.id);return {id:r.id};
 }
 function decide(db,u,d){
-  const r=reviewedRecord(db,d.kind,d.id);need(permit(u,d.kind==='report'?'review_reports':'review_plans'));
+  const r=reviewedRecord(db,d.kind,d.id);need(permit(u,d.kind==='report'?'review_reports':'review_plans')&&canSeeLegacyItem(u,r,d.kind));
   const key=d.kind+':'+r.id,old=db.one('reviews',key);fresh(r,d.version);fresh(old,d.reviewVersion);
   const current=flow(r,old),state=d.decision;
   required(['under_review','approved','revision_requested','locked'].includes(state),'invalidTransition');
@@ -277,7 +304,7 @@ function decide(db,u,d){
   audit(db,u,d.kind+'.'+state,r.id);return {id:r.id};
 }
 function editComment(db,u,d){
-  need(permit(u,'comments'));const report=reviewedRecord(db,'report',d.reportId);
+  need(permit(u,'comments'));const report=reviewedRecord(db,'report',d.reportId);need(canSeeLegacyItem(u,report,'report'),'forbidden');
   const old=d.id?exists(db.one('comments',d.id)):null;
   if(old){need(old.reportId===report.id&&(full(u)||old.directorId===u.id));fresh(old,d.version);}
   const text=txt(d.text);required(text,'required');
@@ -303,6 +330,7 @@ function editRecord(db,u,bucket,d){
     values={personId,date,status,note,programType,recordedBy:u.id,personName:db.one('users',personId)?.name||seedPeople.find(p=>p.id===personId)?.name||old?.personName};
   }else{
     if(bucket==='announcements')need(publishes(u));
+    if(bucket==='projects')need(full(u)||((hqReportingRoles.has(u.role)||centerReportingRoles.has(u.role))&&permit(u,'projects')),'forbidden');
     if(bucket==='documents')need(permit(u,'documents'));
     if(old)need(full(u)||permit(u,bucket));
     const title=txt(d.title,500);required(title,'titleRequired');
@@ -328,19 +356,23 @@ function removeRecord(db,u,d){
 function visibleState(db,u){
   if(u.onboarding)return {me:privateUser(u),onboarding:true};
   const all=db.all('users'),members=all.filter(x=>stateOf(x)==='active'),admin=permit(u,'manage_users');
-  const reviews=db.all('reviews'),reportAccess=seesReports(u),reports=reportAccess?db.all('reports').filter(r=>flow(r)!=='draft'||r.userId===u.id||permit(u,'review_reports')):[];
-  const plans=db.all('plans').filter(r=>r.userId===u.id || permit(u,'review_plans') || (r.department===u.department&&['approved','locked'].includes(flow(r,reviews.find(v=>v.id==='plan:'+r.id)))));
-  const reportIds=new Set(reportAccess?[...sourceIds,...reports.map(r=>r.id)]:[]),planIds=new Set(plans.map(r=>r.id));
-  const visiblePeople=full(u)||permit(u,'manage_users')||permit(u,'v11:oversight')?members:
+  const reviews=db.all('reviews'),reportAccess=seesReports(u),reports=reportAccess?db.all('reports').filter(r=>
+    canSeeLegacyItem(u,r,'report')&&(flow(r)!=='draft'||r.userId===u.id||permit(u,'review_reports'))):[];
+  const plans=db.all('plans').filter(r=>canSeeLegacyItem(u,r,'plan') &&
+    (r.userId===u.id || permit(u,'review_plans') || ['approved','locked'].includes(flow(r,reviews.find(v=>v.id==='plan:'+r.id)))));
+  const reportIds=new Set([...(full(u)?sourceIds:[]),...reports.map(r=>r.id)]),planIds=new Set(plans.map(r=>r.id));
+  const visiblePeople=full(u)?members:
     u.center?members.filter(x=>x.id===u.id||x.center===u.center||directors.includes(x.role)):
-    u.department?members.filter(x=>x.id===u.id||x.department===u.department||directors.includes(x.role)):
+    u.department?members.filter(x=>x.id===u.id||(!x.center&&x.department===u.department)||directors.includes(x.role)):
     members.filter(x=>x.id===u.id||directors.includes(x.role));
   return {me:privateUser(u),directory:visiblePeople.map(directoryUser),former:full(u)?all.filter(x=>stateOf(x)==='removed').map(x=>({id:x.id,name:x.name})):[],
-    users:admin?all.map(privateUser):[],reports,plans,
+    users:admin?all.filter(x=>full(u)||canManage(u,x)).map(privateUser):[],reports,plans,
     reviews:reviews.filter(r=>r.kind==='plan'?planIds.has(r.itemId):reportIds.has(r.itemId)),
     comments:reportAccess?db.all('comments').filter(c=>reportIds.has(c.reportId)&&(c.visible===true||permit(u,'comments'))):[],
-    attendance:db.all('attendance').filter(r=>managesAttendance(u)||r.personId===u.id),projects:db.all('projects'),announcements:db.all('announcements'),
-    documents:permit(u,'documents')?db.all('documents'):[],audit:full(u)?db.all('audit').slice(-100).reverse():[],...v11State(db,u)};
+    attendance:db.all('attendance').filter(r=>managesAttendance(u)||r.personId===u.id),
+    projects:db.all('projects').filter(r=>full(u)||r.createdBy===u.id),announcements:db.all('announcements'),
+    documents:permit(u,'documents')?db.all('documents').filter(r=>full(u)||r.ownerId===u.id):[],
+    audit:full(u)?db.all('audit').slice(-100).reverse():[],...v11State(db,u)};
 }
 const encoder=new TextEncoder();
 const hex=b=>Array.from(new Uint8Array(b),x=>x.toString(16).padStart(2,'0')).join('');
