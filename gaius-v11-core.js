@@ -173,6 +173,46 @@ function importDirectorPlan(db,u,p){
  audit(db,u,'v11.directorPlan.import',u.id);
  return {count:entries.length,totalBudget:68000};
 }
+// Authenticated Director import. Only extracted text traverses the backend;
+// original DOCX files and this private bundle are never committed to Pages.
+const SOURCE_DOCUMENTS={
+ 'gaius-ministry-manual-en-2026':{filename:'GAIUS MINISTRY(1).docx',kind:'ministry',scope:'organization'},
+ 'gaius-teaching-roadmap-am-2026':{filename:'የትምህርት ሂደት.docx',kind:'teaching',scope:'organization'},
+ 'gaius-country-director-six-month-plan-2026':{filename:'gaius_director_6_month_plan(1).docx',kind:'other',scope:'personal'}
+};
+function importSourceDocs(db,u,p){
+ check(active(u)&&isDirector(u),'forbidden');
+ const bundle=p?.bundle;
+ check(bundle?.schema==='gaius-private-source-documents-v1','invalidSource',400);
+ check(Array.isArray(bundle.documents)&&bundle.documents.length>=1&&bundle.documents.length<=3,'sourceCountInvalid',400);
+ const seen=new Set(),created=[],skipped=[];
+ for(const doc of bundle.documents){
+  const sourceId=clean(doc?.sourceId,95),expected=SOURCE_DOCUMENTS[sourceId];
+  check(expected&&!seen.has(sourceId),'sourceNotRecognized',400);
+  seen.add(sourceId);
+  check(doc?.sourceFile===expected.filename&&doc?.kind===expected.kind&&doc?.scopeType===expected.scope,'sourceMetadataInvalid',400);
+  if(expected.scope==='personal')check(u.role==='country_director','forbidden');
+  check(typeof doc.body==='string'&&doc.body.length>=50&&doc.body.length<=40000,'sourceTextInvalid',400);
+  check(typeof doc.sourceSha256==='string'&&/^[a-f0-9]{64}$/.test(doc.sourceSha256),'sourceHashInvalid',400);
+  const title=clean(doc.title,900);
+  check(title.length>=10,'sourceTitleInvalid',400);
+  const existing=db.all('v11_records').find(x=>x.kind==='manuals'&&x.importTag===sourceId&&
+    (expected.scope==='organization'||x.ownerId===u.id)&&x.status!=='archived');
+  if(existing){skipped.push(sourceId);continue;}
+  const data=validate('manuals',{title,kind:doc.kind,body:doc.body,
+   versionNote:'Source-derived text from '+expected.filename+'; original DOCX is not uploaded and approval is separate.'});
+  const record={id:crypto.randomUUID(),kind:'manuals',
+   scopeType:expected.scope,scopeId:expected.scope==='personal'?u.id:'org',
+   ownerId:u.id,ownerName:u.name,createdAt:at(),updatedAt:at(),status:'draft',
+   _v:1,importTag:sourceId,data,
+   sourceSnapshot:{...data,sourceId,sourceFile:expected.filename,
+    docxSha256:doc.sourceSha256,extraction:clean(doc.extraction,240)},
+   history:[{at:at(),by:u.id,action:'imported-source-text-private'}]};
+  db.put('v11_records',record);audit(db,u,'v11.sourceDoc.import',record);
+  created.push(sourceId);
+ }
+ return {count:created.length,created,skipped};
+}
 function completeVisit(db,u,p){
  check(active(u)&&u.role==='country_director','forbidden');
  const r=db.one('v11_records',clean(p.id));
@@ -186,6 +226,7 @@ function completeVisit(db,u,p){
  db.put('v11_records',next);audit(db,u,'v11.visit.completed',next);return {id:next.id};
 }
 export function v11Command(db,u,action,p){
+ if(action==='v11.importSourceDocs')return importSourceDocs(db,u,p);
  if(action==='v11.importDirectorPlan')return importDirectorPlan(db,u,p);
  if(action==='v11.completeVisit')return completeVisit(db,u,p);
  if(action==='v11.save')return save(db,u,p);
