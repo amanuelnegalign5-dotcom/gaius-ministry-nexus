@@ -350,6 +350,7 @@ function requiredCenterInput(){const isCenter=centerRegistrationRoles.has(val('r
  $('regCenter').required=isCenter;$('regCenterStar').textContent=isCenter?'*':'';
  if(['center_leader','potential_center_leader','volunteer'].includes(val('regRole')))$('regDept').required=false;
  else $('regDept').required=true;
+ if(directors.includes(val('regRole'))){$('regDept').required=false;set('regDept','');}
  $('regDeptStar').textContent=$('regDept').required?'*':'';
 }
 $('regRole').onchange=()=>{assignment('regRole','regDept');requiredCenterInput();authText();};
@@ -359,7 +360,7 @@ for(const id of ['langApp','langAuth'])$(id).onchange=()=>{lang=val(id);translat
 
 
 const source=base.originals.map(r=>({...r,month:'2026-10',submittedAt:'2026-11-01T09:00:00Z',department:r.enTitle,original:true}));
-const reports=()=>seesReports(current())?[...source,...view.reports]:[];
+const reports=()=>seesReports(current())?[...(full(current())?source:[]),...view.reports]:[];
 const reviewOf=(kind,id)=>view.reviews.find(r=>r.id===kind+':'+id);
 const memberName=id=>[...view.directory,...seedPeople,...view.former].find(p=>p.id===id)?.name||id||'—';
 const listFor=kind=>kind==='plan'?view.plans:reports();
@@ -388,6 +389,9 @@ function defaults(){
 }
 function allowPage(id){
  if(!current()||view.onboarding)return false;
+ // Unassigned staff use Monday staff workspace, attendance, and own profile only.
+ if(!full(current())&&!seesReports(current())&&!permit(current(),'manage_users'))
+   return ['workspace','attendance','profilePage'].includes(id);
  if(['dashboard','reports'].includes(id))return seesReports(current());
  if(id==='reportEntry')return writesReports(current());
  if(id==='documents')return permit(current(),'documents');
