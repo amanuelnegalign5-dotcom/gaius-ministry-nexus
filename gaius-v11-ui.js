@@ -33,26 +33,58 @@ async function load(){
  return state;
 }
 const directorRole=role=>role==='country_director'||role==='international_director';
-let autoOpenedDirectorId=null;
+let autoOpenedDirectorId=null,opening=false,viewEpoch=0;
+function showOpenError(e){
+ const message=text('የDirector Workspace መክፈት አልተቻለም፦ ','Could not open Director workspace: ')+(e?.message||String(e));
+ const notice=$('feedback');
+ if(notice){notice.replaceChildren();notice.textContent=message;notice.classList.remove('hide');notice.classList.add('error');}
+ else alert(message);
+}
 async function open(){
+ if(active||opening)return;
+ opening=true;
+ const epoch=++viewEpoch;
+ launch.disabled=true;
+ // Replace the legacy page with a stable loading surface immediately:
+ // director data is revalidated before protected records are drawn.
+ app.classList.add('nexus-mode');
+ root.hidden=false;
+ oldMain.style.display='none';
+ root.innerHTML='<div class="v11wrap"><div class="v11box" role="status" aria-live="polite">Loading Gaius Nexus… / ጋይዮስ ኔክሰስ እየተከፈተ ነው…</div></div>';
  try{
   await load();
+  if(epoch!==viewEpoch)return; // user signed out or closed while data loaded
   if(directorRole(my().role)&&caps().director)section='director';
+  else if(section==='director')section='overview';
   active=true;
+  app.classList.add('nexus-mode');
   root.hidden=false;
   oldMain.style.display='none';
   await render();
-  root.scrollIntoView({block:'start',behavior:'auto'});
+  if(epoch===viewEpoch)window.scrollTo({top:0,behavior:'auto'});
  }catch(e){
+  if(epoch!==viewEpoch)return;
   active=false;
   root.hidden=true;
+  app.classList.remove('nexus-mode');
   oldMain.style.display='';
   autoOpenedDirectorId=null;
-  alert(text('የDirector Workspace መክፈት አልተቻለም፦ ','Could not open Director workspace: ')+(e?.message||String(e)));
- }
+  showOpenError(e);
+ }finally{opening=false;launch.disabled=false;}
 }
-function close(){active=false;root.hidden=true;oldMain.style.display='';}
-launch.onclick=()=>active?close():void open();
+function close(){
+ ++viewEpoch;
+ active=false;
+ root.hidden=true;
+ app.classList.remove('nexus-mode');
+ oldMain.style.display='';
+}
+// Tapping the launcher while the director workspace is already visible must NOT
+// make it disappear; the separate "Back to existing pages" control closes it.
+launch.onclick=()=>{
+ if(active){section=directorRole(my().role)&&caps().director?'director':'overview';void render();window.scrollTo({top:0,behavior:'auto'});}
+ else void open();
+};
 // The Director lands in their Command Center on successful login, without losing
 // any preserved v10 pages. Other roles keep their existing restricted landing pages.
 window.addEventListener('gaius:nexus-session-ready',event=>{
@@ -64,6 +96,7 @@ window.addEventListener('gaius:nexus-session-ready',event=>{
 window.addEventListener('gaius:nexus-session-cleared',()=>{
  close();root.replaceChildren();state=null;autoOpenedDirectorId=null;section='overview';
 });
+$('langApp')?.addEventListener('change',()=>{if(active)void render();});
 app.addEventListener('click',e=>{if(active&&(e.target.closest('button.nav')||e.target.closest('#logout')))close();},true);
 window.addEventListener('online',()=>{if(active){alertMsg(text('ኢንተርኔት ተመልሷል፤ ያልተላኩ ረቂቆችን መላክ ይችላሉ','Online: pending drafts can now sync'));}});
 const my=()=>state?.me||{};const caps=()=>state?.v11?.capabilities||{};const records=()=>state?.v11?.records||[];
