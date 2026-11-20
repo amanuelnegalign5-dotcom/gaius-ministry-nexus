@@ -3,6 +3,6 @@
   "main": "gaius-worker.js",
   "compatibility_date": "2026-09-01",
   "workers_dev": true,
-  "vars": { "ALLOWED_ORIGIN": "https://YOUR-GITHUB-USERNAME.github.io" },
+  "vars": { "ALLOWED_ORIGIN": "https://github.com/amanuelnegalign5-dotcom" },
   "durable_objects": { "bindings": [{ "name": "WORKSPACE", "class_name": "MinistryWorkspace" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["MinistryWorkspace"] }],
