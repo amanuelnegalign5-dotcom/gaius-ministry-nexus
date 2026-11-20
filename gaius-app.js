@@ -232,6 +232,7 @@ function notification(key,isError=false){
 function forgetEdits(){editReport=editPlan=editProfile=null;for(const k of Object.keys(edits))delete edits[k];}
 function signedOut(){
  view=null;forgetEdits();store.clearSession();vis('app',false);vis('auth',true);vis('feedback',false);
+ window.dispatchEvent(new Event('gaius:nexus-session-cleared'));
  // Clear rendered private content and fields before another account uses the same tab.
  for(const id of ['adminUsers','auditList','queue','reportList','recent','planList','docList','peopleList','profileFields','attendanceList','annList','projectList'])$(id).replaceChildren();
  for(const id of ['monthChart','performanceMonths','deptSummary','attendanceSummary','batchRows','successorUser','userCounts','who','profileName','profileRole','profileSummary'])$(id).replaceChildren();
