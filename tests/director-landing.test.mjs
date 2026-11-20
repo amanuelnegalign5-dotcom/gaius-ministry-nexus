@@ -27,6 +27,6 @@ test('signout hides director workspace and clears protected records',()=>{
 });
 test('PWA release invalidates old cached UI modules',()=>{
  assert.match(html,/gaius-app\.js\?v=11\.1\.4/);
- assert.match(html,/gaius-v11-ui\.js\?v=11\.1\.4/);
- assert.match(worker,/11\.1\.4-source-brand/);
+ assert.match(html,/gaius-v11-ui\.js\?v=11\.1\.5/);
+ assert.match(worker,/11\.1\.5-file-picker/);
 });
