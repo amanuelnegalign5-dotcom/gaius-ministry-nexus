@@ -247,6 +247,10 @@ async function refresh(){
  const first=!view||view.onboarding;view=next;
  if(first){vis('auth',false);vis('app',true);forgetEdits();defaults();tab=seesReports(current())?'dashboard':'attendance';}
  renderAll();
+ // UI-only notification: no credentials or organizational data leave the browser.
+ window.dispatchEvent(new CustomEvent('gaius:nexus-session-ready',{
+  detail:{id:next.me?.id,role:next.me?.role}
+ }));
 }
 async function act(el,fn){
  if(busy.has(el))return;busy.add(el);if(el.matches('button'))el.disabled=true;
