@@ -17,8 +17,8 @@ test('directors land in own command center while old pages remain accessible',()
  assert.match(nexus,/addEventListener\('gaius:nexus-session-ready'/);
  assert.match(nexus,/if\(directorRole\(my\(\)\.role\)&&caps\(\)\.director\)section='director'/);
  assert.match(nexus,/oldMain\.style\.display='none'/);
- assert.match(nexus,/function close\(\)\{active=false;root\.hidden=true;oldMain\.style\.display='';\}/);
- assert.match(nexus,/root\.scrollIntoView/);
+ assert.match(nexus,/function close\(\)\{[\s\S]*?root\.hidden=true;[\s\S]*?app\.classList\.remove\('nexus-mode'\);[\s\S]*?oldMain\.style\.display='';/);
+ assert.match(nexus,/window\.scrollTo\(\{top:0,behavior:'auto'\}\)/);
 });
 test('signout hides director workspace and clears protected records',()=>{
  assert.match(app,/gaius:nexus-session-cleared/);
@@ -26,7 +26,7 @@ test('signout hides director workspace and clears protected records',()=>{
  assert.match(nexus,/root\.replaceChildren\(\);state=null;autoOpenedDirectorId=null/);
 });
 test('PWA release invalidates old cached UI modules',()=>{
- assert.match(html,/gaius-app\.js\?v=11\.1\.2/);
- assert.match(html,/gaius-v11-ui\.js\?v=11\.1\.2/);
- assert.match(worker,/11\.1\.2-director/);
+ assert.match(html,/gaius-app\.js\?v=11\.1\.3/);
+ assert.match(html,/gaius-v11-ui\.js\?v=11\.1\.3/);
+ assert.match(worker,/11\.1\.3-layout/);
 });
