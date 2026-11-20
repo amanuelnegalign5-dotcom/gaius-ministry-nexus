@@ -1,4 +1,3 @@
-
 {
   "name": "gaius-nexus-api",
   "main": "gaius-worker.js",
@@ -18,7 +17,10 @@
   "migrations": [
     {
       "tag": "v1",
-      "new_sqlite_classes": ["MinistryWorkspace"]
+      "new_sqlite_classes": [
+        "MinistryWorkspace"
+      ]
     }
-  ]
+  ],
+  "keep_vars": true
 }
