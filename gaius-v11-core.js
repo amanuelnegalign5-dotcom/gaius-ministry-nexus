@@ -63,6 +63,8 @@ function canCreate(u,k,scopeType,scopeId){
  // Center attendance is never an HQ or personal Monday entry.
  if(k==='centerAttendance')return scopeType==='center'&&
   (isDirectorRole(u)||(CENTER_ATTENDANCE_EDITORS.has(u.role)&&sameUnit(scopeId,u.center)));
+ if(['potential_center_leader','potential_department_leader'].includes(u.role)&&
+  !['plans6','monthly'].includes(k))return false;
  if(V11_KINDS[k].personalOnly)return isDirector(u)&&scopeType==='personal'&&scopeId===u.id&&u.role==='country_director';
  if(scopeType==='personal'){
   if(centerMember(u)&&['monthly','plans6'].includes(k))return false;
@@ -140,7 +142,8 @@ function save(db,u,p){
  if(kind==='followups'){check(!db.all('v11_records').some(r=>r.id!==old?.id&&r.kind==='followups'&&r.scopeId===scopeId&&r.data?.week===data.week&&r.status!=='archived'),'duplicateWeeklyFollowup',409);}
  if(kind==='centerAttendance'){
    const participant=db.one('users',data.participantId);
-   check(participant&&CENTER_ROLES.has(participant.role)&&sameUnit(participant.center,scopeId),'participantRoleInvalid',400);
+   check(participant&&active(participant)&&CENTER_ROLES.has(participant.role)&&
+    sameUnit(participant.center,scopeId),'participantRoleInvalid',400);
    if(!isDirector(u)&&u.role==='center_department_leader')
     check(sameUnit(participant.department,u.department),'departmentScopeMismatch');
    data.departmentType=participant.department||'';
