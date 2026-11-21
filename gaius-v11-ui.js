@@ -128,7 +128,7 @@ function centerWorkspaceScreen(){
  if(!director)selectedWorkCenter=ownCenter;
  const related=records().filter(r=>r.scopeType==='center'&&
    ['plans6','monthly','centerAttendance'].includes(r.kind)&&r.status!=='archived');
- const names=[...new Set([...related.map(r=>r.scopeId),...records().filter(r=>r.kind==='centers').map(r=>r.data?.name),...(ownCenter?[ownCenter]:[])].filter(Boolean))].sort();
+ const names=[...new Set([...related.map(r=>r.scopeId),...records().filter(r=>r.kind==='centers').map(r=>r.data?.name),...(state.directory||[]).map(u=>u.center),...(ownCenter?[ownCenter]:[])].filter(Boolean))].sort();
  const chosen=director?selectedWorkCenter:ownCenter;
  const visible=related.filter(r=>!chosen||r.scopeId===chosen);
  const centers=chosen?[chosen]:[...new Set(visible.map(r=>r.scopeId))].sort();
