@@ -239,7 +239,8 @@ function completeVisit(db,u,p){
  db.put('v11_records',next);audit(db,u,'v11.visit.completed',next);return {id:next.id};
 }
 export function v11Command(db,u,action,p){
- if(action==='v11.importSourceDocs')return importSourceDocs(db,u,p);
+ if(action==='v11.fileAccess')return updateFileAccess(db,u,p);
+  if(action==='v11.importSourceDocs')return importSourceDocs(db,u,p);
  if(action==='v11.importDirectorPlan')return importDirectorPlan(db,u,p);
  if(action==='v11.completeVisit')return completeVisit(db,u,p);
  if(action==='v11.save')return save(db,u,p);
@@ -253,17 +254,51 @@ export function v11State(db,u){
  const allowedKinds=isDirector(u)?V11_KINDS_LIST.filter(k=>!V11_KINDS[k].personalOnly||u.role==='country_director'):V11_KINDS_LIST.filter(k=>canCreate(u,k,scopeType,scopeId));
  return {v11:{records:db.all('v11_records').filter(r=>canRead(u,r)),
   capabilities:{director:isDirector(u),oversight:isDirector(u),canApprove:granted(u,'v11:approve'),canPublish:granted(u,'v11:publish'),canEditManual:granted(u,'v11:edit_manual'),allowedKinds,canUploadFile:scopeType!=='personal',defaultScopeType:scopeType,defaultScopeId:scopeId,hqReports:isDirectorRole(u)||hqLeader(u)},
-  files:db.all('v11_files').filter(f=>canReadFile(u,f)).map(f=>({id:f.id,name:f.name,type:f.type,size:f.size,scopeType:f.scopeType,scopeId:f.scopeId,ownerId:f.ownerId,status:f.status,createdAt:f.createdAt}))}};
+  files:db.all('v11_files').filter(f=>canReadFile(u,f)).map(f=>({id:f.id,name:f.name,type:f.type,size:f.size,scopeType:f.scopeType,scopeId:f.scopeId,ownerId:f.ownerId,status:f.status,createdAt:f.createdAt,description:f.description||'',category:f.category||'general',access:(isDirectorRole(u)||f.ownerId===u.id)?f.access:null}))}};
 }
+// Explicit grants set by Directors. Files uploaded after this release are
+// visible to uploader and Directors only until approved and granted. Old
+// documents retain the previous scoped approval policy for compatibility.
 export function canReadFile(u,f){
  if(!active(u)||f.status==='removed')return false;
- if(f.scopeType==='personal')return f.ownerId===u.id;
- if(isDirector(u))return true;
- if(f.scopeType==='center')return centerMember(u)&&sameUnit(u.center,f.scopeId)&&
-   (f.ownerId===u.id||(u.role==='center_leader'&&f.status==='approved'));
- if(f.scopeType==='hq')return hqLeader(u)&&sameUnit(u.department,f.scopeId)&&
-   (f.ownerId===u.id||f.status==='approved');
+ if(f.ownerId===u.id)return true;
+ if(f.scopeType==='personal')return false;
+ if(isDirectorRole(u))return true;
+ if(f.status!=='approved')return false;
+ if(f.access){
+  const acl=f.access;
+  if(Array.isArray(acl.userIds)&&acl.userIds.includes(u.id))return true;
+  if(Array.isArray(acl.roles)&&acl.roles.includes(u.role))return true;
+  if(acl.shareWithUnit===true){
+   if(f.scopeType==='hq')return hqLeader(u)&&sameUnit(u.department,f.scopeId);
+   if(f.scopeType==='center')return centerMember(u)&&sameUnit(u.center,f.scopeId);
+  }
+  return false;
+ }
+ // Explicit approval on legacy records predates fine-grained ACLs.
+ if(f.scopeType==='center')return centerMember(u)&&sameUnit(u.center,f.scopeId)&&u.role==='center_leader';
+ if(f.scopeType==='hq')return hqLeader(u)&&sameUnit(u.department,f.scopeId);
  return false;
+}
+export const canDownloadFile=(u,f)=>canReadFile(u,f)&&
+ (f.ownerId===u.id||isDirectorRole(u)||f.access?.canDownload!==false);
+export const canPreviewFile=(u,f)=>canReadFile(u,f)&&
+ (f.ownerId===u.id||isDirectorRole(u)||f.access?.canPreview!==false);
+function updateFileAccess(db,u,p){
+ check(active(u)&&isDirectorRole(u),'forbidden');
+ const id=clean(p?.id,65),file=db.one('v11_files',id);
+ check(file&&file.status!=='removed','missing',404);
+ check(file.scopeType!=='personal'||file.ownerId===u.id,'forbidden');
+ const users=Array.isArray(p.userIds)?p.userIds.map(v=>clean(v,65)):[];
+ const roles=Array.isArray(p.roles)?p.roles.map(v=>clean(v,80)):[];
+ check(users.length<=60&&roles.length<=20&&new Set(users).size===users.length&&new Set(roles).size===roles.length,'invalidPermissions',400);
+ const known=db.all('users'),ids=new Set(known.map(x=>x.id)),validRoles=new Set(known.map(x=>x.role));
+ check(users.every(id=>ids.has(id))&&roles.every(role=>validRoles.has(role)),'invalidPermissions',400);
+ const access={userIds:users,roles,shareWithUnit:p.shareWithUnit===true,
+  canDownload:p.canDownload!==false,canPreview:p.canPreview!==false};
+ const next={...file,access,updatedAt:at()};
+ db.put('v11_files',next);audit(db,u,'v11.file.access',next);
+ return {id:next.id};
 }
 export function canUploadFile(u,scopeType,scopeId){
  if(!active(u)||!validScope(scopeType))return false;
