@@ -10,7 +10,7 @@ const text=(am,en)=>localLang()==='am'?am:en;
 const statusText=s=>({draft:text('ረቂቅ','Draft'),submitted:text('ለማጽደቅ ቀርቧል','Submitted'),approved:text('ጸድቋል','Approved'),revision_requested:text('ማሻሻያ ተጠይቋል','Changes requested'),rejected:text('ውድቅ','Rejected'),archived:text('ተመዝግቦ ተዘግቷል','Archived'),pending:text('ማጽደቅ ይጠብቃል','Pending')}[s]||s);
 const scopeLabel=s=>({organization:text('ድርጅት','Organization'),hq:'HQ',center:text('ማዕከል','Center'),personal:text('የግል','Personal')}[s]||s);
 const validFileName=name=>String(name).replace(/[^\p{L}\p{N}_.-]+/gu,'_').slice(0,85)||'GAIUS';
-let active=false,section='overview',state=null,kind='plans6',editing=null,queueBusy=false;
+let active=false,section='overview',state=null,kind='plans6',editing=null,queueBusy=false,previewUrl=null;
 let analysisFilters={month:'',center:'',department:'',ethiopianYear:'',ethiopianMonth:'',startDate:'',endDate:'',focus:'',status:'',unit:''},selectedCenter='',selectedWeek='';
 const root=document.createElement('section');root.id='gaiusV11';root.className='v11root';root.hidden=true;
 const app=$('app'),oldMain=app.querySelector('main'),header=app.querySelector('header .actions')||app.querySelector('header');
@@ -73,6 +73,7 @@ async function open(){
  }finally{opening=false;launch.disabled=false;}
 }
 function close(){
+ if(previewUrl){URL.revokeObjectURL(previewUrl);previewUrl=null;}
  ++viewEpoch;
  active=false;
  root.hidden=true;
@@ -197,6 +198,7 @@ function filePickerHTML(id,type='json'){
  return `<div class="v11picker"><label for="${escape(id)}" class="v11pickerLabel">${escape(label)}</label><input class="v11pickerInput" type="file" id="${escape(id)}" accept="${accept}" aria-describedby="${escape(id)}Help ${escape(id)}Status" required><p class="v11pickerStatus" id="${escape(id)}Status" data-file-status="${escape(id)}" role="status" aria-live="polite">${text('ፋይል አልተመረጠም','No file selected')}</p><p class="v11pickerHelp" id="${escape(id)}Help">${escape(help)}</p></div>`;
 }
 function filesScreen(){
+ if(previewUrl){URL.revokeObjectURL(previewUrl);previewUrl=null;}
  const files=state?.v11?.files||[],ready=state?.services?.mediaUploads===true;
  const canUpload=caps().canUploadFile,admin=caps().director;
  const scope=admin?'personal':caps().defaultScopeType||mine();
@@ -360,6 +362,13 @@ root.addEventListener('submit',e=>{e.preventDefault();withBusy(async()=>{
   if(!confirm(text('16ቱን ዕቅዶች ወደ የግል መዝገብህ ልጫን?','Import 16 goals into your personal workspace?')))return;
   const result=await store.command('v11.importDirectorPlan',{plan});await update();alertMsg(text('የተጫኑ ግቦች','Imported objectives')+': '+result.count);
  }
+ if(e.target.matches('form.v11FileGrants')){
+  if(!caps().director)throw Error('forbidden');
+  const id=e.target.dataset.fileId;
+  const allowedUserIds=[...e.target.querySelectorAll('input[name="allowedUser"]:checked')].map(x=>x.value);
+  await store.command('v11.filePermissions',{id,allowedUserIds});
+  await update();alertMsg(text('የሰነዱ ፈቃድ ተቀምጧል','Document access saved'));return;
+ }
  if(e.target.id==='v11Upload'){
   if(state.services?.mediaUploads!==true)throw Error(text('Cloudflare R2 ማከማቻ አልተዋቀረም','Cloudflare R2 storage is not configured'));
   const file=$('v11File')?.files?.[0];if(!file)throw Error(text('መጀመሪያ ፋይል ምረጥ','Choose a file first'));const result=await store.uploadFile(file,$('v11FileScope').value,$('v11FileUnit').value);
@@ -378,7 +387,7 @@ root.addEventListener('change',e=>{
   return;
  }
  if(e.target.dataset.analyticsFilter){analysisFilters[e.target.dataset.analyticsFilter]=e.target.value;selectedCenter='';render();return;}
- if(e.target.id==='v11FileScope'){const unit=$('v11FileUnit');if(unit)unit.value=e.target.value==='personal'?my().id:'org';return;}
+ if(e.target.id==='v11FileScope'){const unit=$('v11FileUnit');if(unit)unit.value=e.target.value==='personal'?my().id:e.target.value==='organization'?'org':'';return;}
  if(e.target.id==='v11DepartmentType'){const group=$('v11DeptExtras');if(group){group.innerHTML=(NEXUS_DEPARTMENT_FIELDS[e.target.value]||[]).map(f=>field(f,editing?.data?.[f[0]]??'')).join('');}return;}
  if(e.target.id==='v11Kind'){kind=e.target.value;editing=null;render();}else if(e.target.id==='v11Scope'){const x=$('v11ScopeId');if(x)x.value=e.target.value==='personal'?my().id:e.target.value==='hq'?my().department||'':e.target.value==='center'?my().center||'':'org';}});
 root.addEventListener('click',e=>{const b=e.target.closest('[data-v]');if(!b)return;
@@ -396,5 +405,20 @@ root.addEventListener('click',e=>{const b=e.target.closest('[data-v]');if(!b)ret
  if(op==='sync'){await sync();return;}
  if(op==='dropDraft'){if(confirm(text('ያልተላከ ረቂቅ ልሰርዝ?','Delete the unsynced local draft?'))){await draftDelete(id);await render();}return;}
  if(op==='fileReview'){if(b.dataset.decision==='removed'&&!confirm(text('ፋይሉ ከR2 ማከማቻ ይሰረዛል። ለመቀጠል እርግጠኛ ነህ?','The file will be deleted from storage. Continue?')))return;await store.command('v11.fileReview',{id,decision:b.dataset.decision});await update();alertMsg('Updated');return;}
+ if(op==='previewFile'){
+   const f=state.v11.files.find(x=>x.id===id);if(!f)throw Error('missing');
+   const host=$('v11filepreview');if(!host)return;
+   if(previewUrl)URL.revokeObjectURL(previewUrl);
+   const blob=await store.downloadFile(id);
+   previewUrl=URL.createObjectURL(blob);
+   host.hidden=false;host.replaceChildren();
+   const title=document.createElement('h2');title.textContent=f.name;host.append(title);
+   const close=document.createElement('button');close.className='btn ghost';close.type='button';close.textContent=text('ቅድመ እይታ ዝጋ','Close preview');
+   close.onclick=()=>{host.replaceChildren();host.hidden=true;if(previewUrl){URL.revokeObjectURL(previewUrl);previewUrl=null;}};
+   host.append(close);
+   if(f.type.startsWith('image/')){const img=document.createElement('img');img.src=previewUrl;img.alt=f.name;img.className='v11previewImage';host.append(img);}
+   else{const frame=document.createElement('iframe');frame.src=previewUrl;frame.title=f.name;frame.className='v11previewFrame';frame.setAttribute('sandbox','');host.append(frame);}
+   host.scrollIntoView({block:'start',behavior:'smooth'});return;
+  }
  if(op==='download'){const file=state.v11.files.find(f=>f.id===id);const blob=await store.downloadFile(id);saveDownload(blob,file?.name||'GAIUS-file');return;}
  });});
