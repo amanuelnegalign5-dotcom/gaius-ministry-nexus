@@ -147,7 +147,8 @@ function save(db,u,p){
    if(!isDirector(u)&&u.role==='center_department_leader')
     check(sameUnit(participant.department,u.department),'departmentScopeMismatch');
    data.departmentType=participant.department||'';
-   check(!db.all('v11_records').some(r=>r.id!==old?.id&&r.kind===kind&&r.scopeId===scopeId&&r.data.date===data.date&&r.data.eventType===data.eventType&&r.data.participantId===data.participantId&&r.status!=='archived'),'attendanceExists',409);
+   check(!db.all('v11_records').some(r=>r.id!==old?.id&&r.kind===kind&&r.scopeId===scopeId&&r.data.date===data.date&&r.data.eventType===data.eventType&&r.data.participantId===data.participantId&&
+       (data.eventType!=='other_meeting'||sameUnit(r.data.meetingName,data.meetingName))&&r.status!=='archived'),'attendanceExists',409);
  }
  const record={id:old?.id||crypto.randomUUID(),kind,scopeType,scopeId,ownerId:old?.ownerId||u.id,ownerName:old?.ownerName||u.name,
   createdAt:old?.createdAt||at(),updatedAt:at(),status:old?.status||'draft',sourceSnapshot:old?.sourceSnapshot||null,importTag:old?.importTag||null,data,history:[...(old?.history||[]),{at:at(),by:u.id,action:old?'edited':'created'}],_v:ver(old)+1};
