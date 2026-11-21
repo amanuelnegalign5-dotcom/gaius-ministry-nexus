@@ -238,7 +238,19 @@ function completeVisit(db,u,p){
  data:{...r.data,actualDate:actual,observations},history:[...r.history,{at:at(),by:u.id,action:'completed'}]};
  db.put('v11_records',next);audit(db,u,'v11.visit.completed',next);return {id:next.id};
 }
+// File recipients are managed only by Directors, and never through frontend-only flags.
+function filePermissions(db,u,p){
+ check(active(u)&&isDirector(u),'forbidden');
+ const f=db.one('v11_files',clean(p?.id,100));check(f&&f.status!=='removed','missing',404);
+ check(Array.isArray(p?.allowedUserIds)&&p.allowedUserIds.length<=100,'invalidRecipients',400);
+ const ids=[...new Set(p.allowedUserIds.map(id=>clean(id,100)))];
+ check(ids.every(id=>db.one('users',id)&&active(db.one('users',id))),'invalidRecipients',400);
+ const next={...f,allowedUserIds:ids,updatedAt:at()};
+ db.put('v11_files',next);audit(db,u,'v11.file.permissions',next);
+ return {id:f.id,count:ids.length};
+}
 export function v11Command(db,u,action,p){
+ if(action==='v11.filePermissions')return filePermissions(db,u,p);
  if(action==='v11.importSourceDocs')return importSourceDocs(db,u,p);
  if(action==='v11.importDirectorPlan')return importDirectorPlan(db,u,p);
  if(action==='v11.completeVisit')return completeVisit(db,u,p);
@@ -252,25 +264,28 @@ export function v11State(db,u){
  const scopeId=scopeType==='center'?u.center:scopeType==='hq'?u.department:scopeType==='personal'?u.id:'org';
  const allowedKinds=isDirector(u)?V11_KINDS_LIST.filter(k=>!V11_KINDS[k].personalOnly||u.role==='country_director'):V11_KINDS_LIST.filter(k=>canCreate(u,k,scopeType,scopeId));
  return {v11:{records:db.all('v11_records').filter(r=>canRead(u,r)),
-  capabilities:{director:isDirector(u),oversight:isDirector(u),canApprove:granted(u,'v11:approve'),canPublish:granted(u,'v11:publish'),canEditManual:granted(u,'v11:edit_manual'),allowedKinds,canUploadFile:scopeType!=='personal',defaultScopeType:scopeType,defaultScopeId:scopeId,hqReports:isDirectorRole(u)||hqLeader(u)},
-  files:db.all('v11_files').filter(f=>canReadFile(u,f)).map(f=>({id:f.id,name:f.name,type:f.type,size:f.size,scopeType:f.scopeType,scopeId:f.scopeId,ownerId:f.ownerId,status:f.status,createdAt:f.createdAt}))}};
+  capabilities:{director:isDirector(u),oversight:isDirector(u),canApprove:granted(u,'v11:approve'),canPublish:granted(u,'v11:publish'),canEditManual:granted(u,'v11:edit_manual'),allowedKinds,canUploadFile:scopeType!=='personal'||(u.adminPermissions||[]).includes('v11:upload_file'),defaultScopeType:scopeType,defaultScopeId:scopeId,hqReports:isDirectorRole(u)||hqLeader(u)},
+  files:db.all('v11_files').filter(f=>canReadFile(u,f)).map(f=>({id:f.id,name:f.name,type:f.type,size:f.size,scopeType:f.scopeType,scopeId:f.scopeId,ownerId:f.ownerId,status:f.status,createdAt:f.createdAt,...(isDirector(u)?{allowedUserIds:f.allowedUserIds||[]}:{} )}))}};
 }
 export function canReadFile(u,f){
  if(!active(u)||f.status==='removed')return false;
- if(f.scopeType==='personal')return f.ownerId===u.id;
  if(isDirector(u))return true;
+ if(f.ownerId===u.id)return true;
+ if(f.status!=='approved')return false;
+ if((f.allowedUserIds||[]).includes(u.id))return true;
+ if(f.scopeType==='personal')return false;
  if(f.scopeType==='center')return centerMember(u)&&sameUnit(u.center,f.scopeId)&&
    (f.ownerId===u.id||(u.role==='center_leader'&&f.status==='approved'));
- if(f.scopeType==='hq')return hqLeader(u)&&sameUnit(u.department,f.scopeId)&&
-   (f.ownerId===u.id||f.status==='approved');
+ if(f.scopeType==='hq')return hqLeader(u)&&sameUnit(u.department,f.scopeId);
  return false;
 }
 export function canUploadFile(u,scopeType,scopeId){
  if(!active(u)||!validScope(scopeType))return false;
- if(scopeType==='personal')return isDirector(u)&&scopeId===u.id;
+ if(scopeType==='personal')return scopeId===u.id&&(isDirector(u)||(u.adminPermissions||[]).includes('v11:upload_file'));
  if(isDirector(u))return true;
  if(scopeType==='center')return centerMember(u)&&sameUnit(u.center,scopeId);
  if(scopeType==='hq')return hqLeader(u)&&sameUnit(u.department,scopeId);
+ if(scopeType==='organization')return (u.adminPermissions||[]).includes('v11:upload_file');
  return false;
 }
 export function approveFile(db,u,id,decision){
