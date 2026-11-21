@@ -62,9 +62,10 @@ function canCreate(u,k,scopeType,scopeId){
  if(!active(u)||!V11_KINDS[k])return false;
  // Center attendance is never an HQ or personal Monday entry.
  if(k==='centerAttendance')return scopeType==='center'&&
-  (isDirector(u)||(CENTER_ATTENDANCE_EDITORS.has(u.role)&&sameUnit(scopeId,u.center)));
+  (isDirectorRole(u)||(CENTER_ATTENDANCE_EDITORS.has(u.role)&&sameUnit(scopeId,u.center)));
  if(V11_KINDS[k].personalOnly)return isDirector(u)&&scopeType==='personal'&&scopeId===u.id&&u.role==='country_director';
  if(scopeType==='personal'){
+  if(centerMember(u)&&['monthly','plans6'].includes(k))return false;
   if(isDirector(u))return scopeId===u.id&&!V11_KINDS[k].centerOnly;
   // Private personal reporting workspace for staff and center-related workers
   // who are not assigned a center-leadership role. No HQ report access.
