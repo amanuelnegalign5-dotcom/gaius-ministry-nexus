@@ -147,3 +147,13 @@ test('center department leaders cannot mark unrelated departments or another cen
   data:{date:'2026-11-22',eventType:'sunday',participantId:id('ArtCandidate'),attendance:'present'}},t.Arts);
  assert.equal(db.one('v11_records',ok.id).data.departmentType,'Arts');
 });
+
+test('two separately named meetings on the same date are allowed, but duplicate attendance is denied',async()=>{
+ const {db,t,id}=await fixture();
+ const payload={kind:'centerAttendance',scopeType:'center',scopeId:'Gerji',
+  data:{date:'2026-11-25',eventType:'other_meeting',meetingName:'Wednesday prayer',participantId:id('Arts'),attendance:'present'}};
+ const a=await issue(db,'v11.save',payload,t.Gerji);
+ const b=await issue(db,'v11.save',{...payload,data:{...payload.data,meetingName:'Wednesday mentorship'}},t.Gerji);
+ assert.notEqual(a.id,b.id);
+ await assert.rejects(issue(db,'v11.save',payload,t.Gerji),e=>e?.message==='attendanceExists');
+});
