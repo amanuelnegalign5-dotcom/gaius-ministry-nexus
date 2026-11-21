@@ -1,5 +1,5 @@
 import * as store from './gaius-store.js';
-import { roleDepartments, directors, permissions, seedPeople, stateOf, full, permit, seesReports, writesReports, managesAttendance, publishes, canManage, flow, version } from './gaius-core.js';
+import { roleDepartments, directors, permissions, seedPeople, stateOf, full, permit, seesReports, writesReports, managesAttendance, mondayMember, publishes, canManage, flow, version } from './gaius-core.js';
 
 const $=id=>document.getElementById(id);
 const base=window.GAIUS_V10;
@@ -246,7 +246,7 @@ async function info(){const result=await store.info();bootstrap=result.bootstrap
 async function refresh(){
  const next=await store.state(); if(next.onboarding){if(!view?.onboarding){view=next;onboarding();}else view=next;return;}
  const first=!view||view.onboarding;view=next;
- if(first){vis('auth',false);vis('app',true);forgetEdits();defaults();tab=seesReports(current())?'dashboard':'attendance';}
+ if(first){vis('auth',false);vis('app',true);forgetEdits();defaults();tab=seesReports(current())?'dashboard':mondayMember(current())?'attendance':'workspace';}
  renderAll();
  // UI-only notification: no credentials or organizational data leave the browser.
  window.dispatchEvent(new CustomEvent('gaius:nexus-session-ready',{
@@ -395,8 +395,9 @@ function defaults(){
 function allowPage(id){
  if(!current()||view.onboarding)return false;
  // Unassigned staff use Monday staff workspace, attendance, and own profile only.
+ if(id==='attendance')return mondayMember(current());
  if(!full(current())&&!seesReports(current())&&!permit(current(),'manage_users'))
-   return ['workspace','attendance','profilePage'].includes(id);
+   return ['workspace','profilePage'].includes(id);
  if(['dashboard','reports'].includes(id))return seesReports(current());
  if(id==='reportEntry')return writesReports(current());
  if(id==='documents')return permit(current(),'documents');
@@ -404,7 +405,7 @@ function allowPage(id){
  return true;
 }
 function navigate(id,scroll=true){
- tab=allowPage(id)?id:'attendance';
+ tab=allowPage(id)?id:mondayMember(current())?'attendance':'workspace';
  document.querySelectorAll('.page').forEach(p=>p.classList.toggle('on',p.id===tab));
  document.querySelectorAll('.nav').forEach(n=>{const on=n.dataset.page===tab;vis(n,allowPage(n.dataset.page));n.classList.toggle('on',on);n.classList.toggle('ghost',!on);if(on)n.setAttribute('aria-current','page');else n.removeAttribute('aria-current');});
  vis('auditPanel',tab==='admin'&&full(current()));
@@ -548,7 +549,14 @@ function entityButtons(bucket,r,editable){
  return `<div class="actions">${editable?button('edit-record','edit',{bucket,id:r.id}):''}${full(current())?button('delete-record','delete',{bucket,id:r.id,version:version(r)}):''}</div>`;
 }
 function renderAttendance(){
- const roster=people(),sel=val('attPerson'),editing=edits.attendance&&view.attendance.find(r=>r.id===edits.attendance.id);
+ if(!mondayMember(current())){
+  $('attendanceList').replaceChildren();$('attendanceSummary').replaceChildren();
+  $('batchRows').replaceChildren();$('attPerson').replaceChildren();
+  vis('saveAttendance',false);vis($('batchAttendance').parentElement,false);
+  return;
+ }
+ const roster=people().filter(p=>p.role?mondayMember(p):seedPeople.some(seed=>seed.id===p.id)),
+  sel=val('attPerson'),editing=edits.attendance&&view.attendance.find(r=>r.id===edits.attendance.id);
  const entries=roster.map(p=>[p.id,p.name]);
  if(editing&&!entries.some(([id])=>id===editing.personId))entries.push([editing.personId,memberName(editing.personId)]);
  selectOptions('attPerson',entries,sel||entries[0]?.[0]);
