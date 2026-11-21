@@ -1,4 +1,5 @@
 import {V11_KINDS,V11_KINDS_LIST} from './gaius-v11-model.js';
+import {isHQReporter,isDirectorRole,isNineHQDepartment} from './gaius-report-policy.js';
 // Authoritative v11 permission logic. Every API write/read runs these checks in the Worker.
 const clean=(x,n=9000)=>String(x??'').trim().slice(0,n);
 const isDirector=u=>['country_director','international_director'].includes(u?.role)||u?.fullAdmin===true;
@@ -17,17 +18,23 @@ function belongs(u,r){
  return r.scopeType==='organization';
 }
 // Default-deny, unit-scoped policy. A permission flag does not erase the user's unit boundary.
-const HQ_LEADER_ROLES=new Set(['media_leader','followup_leader','service_leader','counseling_leader','research_leader','event_leader','admin_finance']);
 const CENTER_ROLES=new Set(['center_leader','center_department_leader']);
 const unit=x=>String(x??'').trim().toLowerCase();
 const sameUnit=(a,b)=>!!unit(a)&&unit(a)===unit(b);
-const hqLeader=u=>HQ_LEADER_ROLES.has(u?.role)&&!!u.department&&!u.center;
+const hqLeader=u=>isHQReporter(u);
 const centerMember=u=>CENTER_ROLES.has(u?.role)&&!!u.center;
 const centerDepartmentMatches=(u,r)=>sameUnit(u.department,r.data?.departmentType||r.data?.department||r.data?.unit);
 const sharedStatus=r=>['approved','submitted'].includes(r.status);
 function canRead(u,r){
  if(!active(u))return false;
  if(r.scopeType==='personal')return r.ownerId===u.id;
+ // HQ plans/reports are shared only among the nine assigned HQ leaders and
+ // the real Directors. A custom fullAdmin flag is NOT a reporting role.
+ if(r.scopeType==='hq'&&['monthly','plans6'].includes(r.kind)){
+  if(isDirectorRole(u))return true;
+  if(!hqLeader(u)||!isNineHQDepartment(r.scopeId))return false;
+  return r.ownerId===u.id||sharedStatus(r);
+ }
  if(isDirector(u))return true;
  // Publicly approved updates can be viewed by leaders, not unrelated staff.
  if(r.scopeType==='organization'){
@@ -52,7 +59,13 @@ function canRead(u,r){
 function canCreate(u,k,scopeType,scopeId){
  if(!active(u)||!V11_KINDS[k])return false;
  if(V11_KINDS[k].personalOnly)return isDirector(u)&&scopeType==='personal'&&scopeId===u.id&&u.role==='country_director';
- if(scopeType==='personal')return isDirector(u)&&scopeId===u.id&&!V11_KINDS[k].centerOnly;
+ if(scopeType==='personal'){
+  if(isDirector(u))return scopeId===u.id&&!V11_KINDS[k].centerOnly;
+  // Private personal reporting workspace for staff and center-related workers
+  // who are not assigned a center-leadership role. No HQ report access.
+  return scopeId===u.id&&['monthly','plans6'].includes(k);
+ }
+ if(scopeType==='hq'&&['monthly','plans6'].includes(k)&&!isDirectorRole(u)&&!hqLeader(u))return false;
  if(isDirector(u))return true;
  if(V11_KINDS[k].fullOnly||k==='centers')return false;
  if(V11_KINDS[k].fullOrPermission&&!granted(u,V11_KINDS[k].fullOrPermission))return false;
@@ -235,11 +248,11 @@ export function v11Command(db,u,action,p){
  fail('unknown',404);
 }
 export function v11State(db,u){
- const scopeType=isDirector(u)?'organization':centerMember(u)?'center':hqLeader(u)?'hq':null;
- const scopeId=scopeType==='center'?u.center:scopeType==='hq'?u.department:'org';
- const allowedKinds=isDirector(u)?V11_KINDS_LIST.filter(k=>!V11_KINDS[k].personalOnly||u.role==='country_director'):scopeType?V11_KINDS_LIST.filter(k=>canCreate(u,k,scopeType,scopeId)):[];
+ const scopeType=isDirector(u)?'organization':centerMember(u)?'center':hqLeader(u)?'hq':'personal';
+ const scopeId=scopeType==='center'?u.center:scopeType==='hq'?u.department:scopeType==='personal'?u.id:'org';
+ const allowedKinds=isDirector(u)?V11_KINDS_LIST.filter(k=>!V11_KINDS[k].personalOnly||u.role==='country_director'):V11_KINDS_LIST.filter(k=>canCreate(u,k,scopeType,scopeId));
  return {v11:{records:db.all('v11_records').filter(r=>canRead(u,r)),
-  capabilities:{director:isDirector(u),oversight:isDirector(u),canApprove:granted(u,'v11:approve'),canPublish:granted(u,'v11:publish'),canEditManual:granted(u,'v11:edit_manual'),allowedKinds,canUploadFile:!!scopeType},
+  capabilities:{director:isDirector(u),oversight:isDirector(u),canApprove:granted(u,'v11:approve'),canPublish:granted(u,'v11:publish'),canEditManual:granted(u,'v11:edit_manual'),allowedKinds,canUploadFile:scopeType!=='personal',defaultScopeType:scopeType,defaultScopeId:scopeId,hqReports:isDirectorRole(u)||hqLeader(u)},
   files:db.all('v11_files').filter(f=>canReadFile(u,f)).map(f=>({id:f.id,name:f.name,type:f.type,size:f.size,scopeType:f.scopeType,scopeId:f.scopeId,ownerId:f.ownerId,status:f.status,createdAt:f.createdAt}))}};
 }
 export function canReadFile(u,f){

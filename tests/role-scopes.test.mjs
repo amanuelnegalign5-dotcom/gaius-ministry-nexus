@@ -34,20 +34,20 @@ async function setup(){
  return {db,boss,t};
 }
 const report=title=>({title,month:'2026-11',activity:'Service',result:'Completed'});
-test('legacy HQ, center and staff reports stay in their own scope',async()=>{
+test('legacy shared HQ reports are for leaders and Directors only',async()=>{
  const {db,boss,t}=await setup();
  const media=await cmd(db,t.Media,'report.save',{status:'submitted',department:'Media',center:'',month:'2026-11',activity:'Media report'});
  const follow=await cmd(db,t.Followup,'report.save',{status:'submitted',department:'Follow-up',center:'',month:'2026-11',activity:'Follow-up report'});
- const center=await cmd(db,t.Gerji,'report.save',{status:'submitted',department:'Arts',center:'Gerji',month:'2026-11',activity:'Center report'});
- assert.deepEqual((await state(db,t.Media)).reports.map(x=>x.id),[media.id]);
- assert.deepEqual((await state(db,t.Followup)).reports.map(x=>x.id),[follow.id]);
- assert.deepEqual((await state(db,t.Gerji)).reports.map(x=>x.id),[center.id]);
+ assert.deepEqual((await state(db,t.Media)).reports.map(x=>x.id).sort(),[media.id,follow.id].sort());
+ assert.deepEqual((await state(db,t.Followup)).reports.map(x=>x.id).sort(),[media.id,follow.id].sort());
+ assert.equal((await state(db,t.Gerji)).reports.length,0);
  assert.equal((await state(db,t.Mekanisa)).reports.length,0);
- assert.equal((await state(db,t.Arts)).reports.length,1);
+ assert.equal((await state(db,t.Arts)).reports.length,0);
  assert.equal((await state(db,t.Worship)).reports.length,0);
  assert.equal((await state(db,t.Staff)).reports.length,0);
- assert.equal((await state(db,boss)).reports.length,3);
- await assert.rejects(cmd(db,t.Gerji,'report.save',{status:'submitted',department:'Arts',center:'Mekanisa',month:'2026-11',activity:'Wrong center'}),err('forbidden'));
+ assert.equal((await state(db,boss)).reports.length,2);
+ await assert.rejects(cmd(db,t.Gerji,'report.save',{status:'submitted',department:'Arts',center:'Gerji',month:'2026-11',activity:'Center report'}),err('forbidden'));
+ await assert.rejects(cmd(db,t.Staff,'report.save',{status:'submitted',department:'Media',month:'2026-11',activity:'Staff report'}),err('forbidden'));
  await assert.rejects(cmd(db,t.Media,'report.save',{status:'submitted',department:'Follow-up',month:'2026-11',activity:'Wrong HQ'}),err('forbidden'));
 });
 test('v11 scope checks stop cross-unit reads, writes and reviews',async()=>{
@@ -72,7 +72,7 @@ test('approved organization operational records remain director-only',async()=>{
  await cmd(db,boss,'v11.transition',{id:r.id,version:db.one('v11_records',r.id)._v,decision:'approve'});
  for(const token of Object.values(t)) assert.equal((await state(db,token)).v11.records.some(x=>x.id===r.id),false);
  assert.equal((await state(db,boss)).v11.records.some(x=>x.id===r.id),true);
- assert.deepEqual((await state(db,t.Staff)).v11.capabilities.allowedKinds,[]);
+ assert.deepEqual(new Set((await state(db,t.Staff)).v11.capabilities.allowedKinds),new Set(['plans6','monthly']));
  assert.equal((await state(db,t.Staff)).v11.capabilities.canUploadFile,false);
 });
 test('delegated permissions do not bypass unit and private record boundaries',async()=>{
@@ -82,7 +82,7 @@ test('delegated permissions do not bypass unit and private record boundaries',as
  const scoped=await state(db,t.Staff);
  assert.equal(scoped.v11.capabilities.oversight,false);
  assert.equal(scoped.users.some(x=>x.username==='gerji'),false);
- assert.deepEqual(scoped.v11.capabilities.allowedKinds,[]);
+ assert.deepEqual(new Set(scoped.v11.capabilities.allowedKinds),new Set(['plans6','monthly']));
  const gerji=db.all('users').find(x=>x.username==='gerji');
  await assert.rejects(cmd(db,t.Staff,'account.remove',{id:gerji.id,version:gerji._v}),err('forbidden'));
  assert.equal((await state(db,boss)).v11.capabilities.allowedKinds.includes('directorGoals'),true);
