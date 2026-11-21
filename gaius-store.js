@@ -89,22 +89,22 @@ export async function confirmEmailCode(code){
 }
 
 // v11 private evidence attachments: browser never receives an R2 public URL.
-export async function uploadFile(file,scopeType='organization',scopeId='org'){
+export async function uploadFile(file,scopeType='personal',scopeId='',description='',category='general'){
   if(!shared)throw new AppError('storageRequiresServer',503);
   if(!file||file.size>10*1024*1024)throw new AppError('fileTooLarge',413);
   const token=sessionStorage.getItem(tokenKey);
   let res;try{res=await fetch(api+'/file/upload',{method:'POST',cache:'no-store',credentials:'omit',
-    headers:{'Authorization':'Bearer '+token,'Content-Type':file.type||({pdf:'application/pdf',docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',mp4:'video/mp4',txt:'text/plain'}[file.name.split('.').pop().toLowerCase()]||'application/octet-stream'),
-      'X-File-Name':encodeURIComponent(file.name).slice(0,220),'X-Gaius-Scope':scopeType,'X-Gaius-Unit':scopeId},body:file});}
+    headers:{'Authorization':'Bearer '+token,'Content-Type':file.type||({pdf:'application/pdf',doc:'application/msword',docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',ppt:'application/vnd.ms-powerpoint',pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation',xls:'application/vnd.ms-excel',xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',csv:'text/csv',zip:'application/zip',gif:'image/gif',jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',txt:'text/plain'}[file.name.split('.').pop().toLowerCase()]||'application/octet-stream'),
+      'X-File-Name':encodeURIComponent(file.name).slice(0,220),'X-Gaius-Scope':scopeType,'X-Gaius-Unit':scopeId,'X-Gaius-Description':encodeURIComponent(description).slice(0,850),'X-Gaius-Category':category},body:file});}
   catch{throw new AppError('offline',503);}
   const data=await res.json().catch(()=>({error:'serviceError'}));
   if(!res.ok)throw new AppError(data.error||'serviceError',res.status);
   return data;
 }
-export async function downloadFile(id){
+export async function downloadFile(id,preview=false){
   if(!shared)throw new AppError('storageRequiresServer',503);
   const token=sessionStorage.getItem(tokenKey);
-  let res;try{res=await fetch(api+'/file/download',{method:'POST',cache:'no-store',credentials:'omit',headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({id})});}
+  let res;try{res=await fetch(api+'/file/download',{method:'POST',cache:'no-store',credentials:'omit',headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({id,preview})});}
   catch{throw new AppError('offline',503);}
   if(!res.ok){const body=await res.json().catch(()=>({}));throw new AppError(body.error||'serviceError',res.status);}
   return res.blob();
