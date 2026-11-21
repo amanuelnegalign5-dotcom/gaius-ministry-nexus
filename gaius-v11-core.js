@@ -37,7 +37,9 @@ function canRead(u,r){
   if(!hqLeader(u)||!isNineHQDepartment(r.scopeId))return false;
   return r.ownerId===u.id||sharedStatus(r);
  }
- if(isDirector(u))return true;
+ if(isDirector(u)&&!(r.scopeType==='center'&&centerMember(u)&&!isDirectorRole(u)))return true;
+ // A center-assigned delegated admin must still respect their own center
+ // boundary and must not see somebody else's draft automatically.
  // Publicly approved updates can be viewed by leaders, not unrelated staff.
  if(r.scopeType==='organization'){
   if(r.kind==='centers')return centerMember(u)&&sameUnit(u.center,r.data?.name)&&r.status==='approved';
@@ -60,6 +62,7 @@ function canRead(u,r){
 }
 function canCreate(u,k,scopeType,scopeId){
  if(!active(u)||!V11_KINDS[k])return false;
+ if(scopeType==='center'&&centerMember(u)&&!isDirectorRole(u)&&!sameUnit(scopeId,u.center))return false;
  // Center attendance is never an HQ or personal Monday entry.
  if(k==='centerAttendance')return scopeType==='center'&&
   (isDirectorRole(u)||(CENTER_ATTENDANCE_EDITORS.has(u.role)&&sameUnit(scopeId,u.center)));
@@ -280,11 +283,11 @@ export function v11Command(db,u,action,p){
  fail('unknown',404);
 }
 export function v11State(db,u){
- const scopeType=isDirector(u)?'organization':centerMember(u)?'center':hqLeader(u)?'hq':'personal';
+ const scopeType=isDirectorRole(u)?'organization':centerMember(u)?'center':hqLeader(u)?'hq':isDirector(u)?'organization':'personal';
  const scopeId=scopeType==='center'?u.center:scopeType==='hq'?u.department:scopeType==='personal'?u.id:'org';
- const allowedKinds=isDirector(u)?V11_KINDS_LIST.filter(k=>!V11_KINDS[k].personalOnly||u.role==='country_director'):V11_KINDS_LIST.filter(k=>canCreate(u,k,scopeType,scopeId));
+ const allowedKinds=isDirectorRole(u)?V11_KINDS_LIST.filter(k=>!V11_KINDS[k].personalOnly||u.role==='country_director'):V11_KINDS_LIST.filter(k=>canCreate(u,k,scopeType,scopeId));
  return {v11:{records:db.all('v11_records').filter(r=>canRead(u,r)),
-  capabilities:{director:isDirector(u),oversight:isDirector(u),canApprove:granted(u,'v11:approve'),canPublish:granted(u,'v11:publish'),canEditManual:granted(u,'v11:edit_manual'),allowedKinds,canUploadFile:scopeType!=='personal'||(u.adminPermissions||[]).includes('v11:upload_file'),defaultScopeType:scopeType,defaultScopeId:scopeId,hqReports:isDirectorRole(u)||hqLeader(u)},
+  capabilities:{director:isDirectorRole(u)||isDirector(u)&&!centerMember(u),oversight:isDirectorRole(u)||isDirector(u)&&!centerMember(u),canApprove:granted(u,'v11:approve'),canPublish:granted(u,'v11:publish'),canEditManual:granted(u,'v11:edit_manual'),allowedKinds,canUploadFile:scopeType!=='personal'||(u.adminPermissions||[]).includes('v11:upload_file'),defaultScopeType:scopeType,defaultScopeId:scopeId,hqReports:isDirectorRole(u)||hqLeader(u)},
   files:db.all('v11_files').filter(f=>canReadFile(u,f)).map(f=>({id:f.id,name:f.name,type:f.type,size:f.size,scopeType:f.scopeType,scopeId:f.scopeId,ownerId:f.ownerId,status:f.status,createdAt:f.createdAt,...(isDirector(u)?{allowedUserIds:f.allowedUserIds||[]}:{} )}))}};
 }
 export function canReadFile(u,f){
