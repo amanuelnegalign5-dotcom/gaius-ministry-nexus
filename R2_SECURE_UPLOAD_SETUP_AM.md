@@ -27,4 +27,4 @@ GitHub Pages የApp ማሳያውን ብቻ ያስተናግዳል። የድርጅ
 6. PDF እና ምስሎች በApp ውስጥ Preview አላቸው። Word/PPT/Excel ከመሣሪያው በሚደገፍ ፕሮግራም ይከፈታሉ።
 
 ## ለLogin ሎጎ
-`icons/gaius-login.png` የሚለው የተያያዘው ጥቁር ጀርባ ያለው ሎጎ መቀመጫ ነው። ይህ ፋይል ካልተጫነ ያለውን `icons/official-logo.jpg` እንዲያሳይ የfallback ሂደት አለ። የተያያዘውን PNG ወደ repo የሚጫን በGithub **Add file → Upload files** በመጠቀም `icons/gaius-login.png` ተብሎ መቀመጥ አለበት።
+`icons/gaius-login.png` ውስጥ ከተጠቃሚው የተሰጠ ጥቁር ጀርባ ያለው የGAIUS ሎጎ በትንሽ የድር ፋይል መጠን ተቀምጧል። በLogin ገጽ ላይ ያ ይታያል፣ በApp ውስጥ ደግሞ የቀድሞው የApp Icon የምስል ፋይል (`icons/official-logo.jpg`) ይታያል።
