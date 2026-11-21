@@ -158,6 +158,14 @@ function centerWorkspaceScreen(){
 function myAvailableKinds(){return (caps().allowedKinds||[]).filter(k=>V11_KINDS[k]);}
 const opts=(values,selected)=>values.map(([v,l])=>`<option value="${escape(v)}" ${String(v)===String(selected)?'selected':''}>${escape(l)}</option>`).join('');
 function userOptions(cur){return opts([['','—'],...(state.directory||[]).map(u=>[u.id,u.name+' · '+(u.department||u.center||u.role)])],cur);}
+function centerAttendanceUsers(cur){
+ const allowed=new Set(['center_leader','potential_center_leader','center_department_leader','potential_department_leader']);
+ const assigned=editing?.scopeId||selectedWorkCenter||my().center;
+ const departmentRole=['center_department_leader','potential_department_leader'].includes(my().role);
+ const users=(state.directory||[]).filter(u=>allowed.has(u.role)&&u.center&&
+   (!assigned||u.center===assigned)&&(!departmentRole||u.department===my().department));
+ return opts([['','—'],...users.map(u=>[u.id,u.name+' · '+u.center+(u.department?' / '+u.department:'')])],cur);
+}
 function centerOptions(cur){const names=records().filter(r=>r.kind==='centers').map(r=>r.data.name);if(my().center&&!names.includes(my().center))names.push(my().center);return opts([['','—'],...names.map(s=>[s,s])],cur);}
 function field(f,value=''){const [key,am,en,type,required]=f,label=escape(localLang()==='am'?am:en)+(required?' *':'');let control;
  const select=items=>`<select data-field="${key}" ${required?'required':''}>${opts(items,value)}</select>`;
@@ -167,7 +175,7 @@ function field(f,value=''){const [key,am,en,type,required]=f,label=escape(localL
  case 'teachingunit':control=select([['','—'],...TEACHING_UNITS.map(x=>[x,x])]);break;
  case 'centerunit':control=select([['','—'],...CENTER_UNITS.map(u=>[u.id,text(u.am,u.en)])]);break;
  case 'center':control=select([['','—'],...records().filter(r=>r.kind==='centers').map(r=>[r.data.name,r.data.name]),...(my().center?[[my().center,my().center]]:[])]);break;
- case 'user':control=`<select data-field="${key}" ${required?'required':''}>${userOptions(value)}</select>`;break;
+ case 'user':control=`<select data-field="${key}" ${required?'required':''}>${kind==='centerAttendance'&&key==='participantId'?centerAttendanceUsers(value):userOptions(value)}</select>`;break;
  case 'registrycenter':control=select([['','—'],...records().filter(r=>r.kind==='centers'&&r.status!=='archived').map(r=>[r.id,r.data.name+' · '+(r.data.location||'')])]);break;
  case 'city':control=select([['','—'],['addis_ababa','Addis Ababa / አዲስ አበባ'],['bishoftu','Bishoftu / Debre Zeit'],['other','Other / ሌላ']]);break;
  case 'department':control=select([['','—'],...HQ_UNITS.map(u=>[u.id,text(u.am,u.en)])]);break;
