@@ -100,7 +100,7 @@ $('langApp')?.addEventListener('change',()=>{if(active)void render();});
 app.addEventListener('click',e=>{if(active&&(e.target.closest('button.nav')||e.target.closest('#logout')))close();},true);
 window.addEventListener('online',()=>{if(active){alertMsg(text('ኢንተርኔት ተመልሷል፤ ያልተላኩ ረቂቆችን መላክ ይችላሉ','Online: pending drafts can now sync'));}});
 const my=()=>state?.me||{};const caps=()=>state?.v11?.capabilities||{};const records=()=>state?.v11?.records||[];
-const mine=()=>my().center?'center':my().department?'hq':'organization';
+const mine=()=>caps().defaultScopeType||(my().center?'center':my().department?'hq':'personal');
 const appStrings={director:['የዳይሬክተር ሥራ','Director workspace'],analytics:['የማዕከላት ትንታኔ','Center analytics'],overview:['ዋና እይታ','Overview'],records:['ሥራ መዝገቦች','Operations'],files:['የሰነድ ማከማቻ','File uploads'],offline:['ያልተላኩ ረቂቆች','Offline drafts'],reference:['የድርጅት ስሞች','Official names']};
 const tr=s=>appStrings[s]?(localLang()==='am'?appStrings[s][0]:appStrings[s][1]):s;
 function frame(content){root.innerHTML=`<div class="v11wrap"><div class="v11top"><div class="v11identity"><div><h1>Gaius Nexus <small>v11.1</small></h1><p>${text('የድርጅት አመራር፣ እቅድ፣ ሪፖርትና ክትትል','Ministry leadership, planning, reporting and follow-up')}</p></div></div><button type="button" class="btn ghost" data-v="close">${text('ወደ v10 ገጾች','Back to existing pages')}</button></div>
@@ -147,7 +147,7 @@ function field(f,value=''){const [key,am,en,type,required]=f,label=escape(localL
  return `<label class="v11field"><span>${label}</span>${control}</label>`;
 }
 function scopeForm(rec){const director=caps().director;
- const choices=director?[['organization',text('ለድርጅት','Organization')],['hq','HQ'],['center',text('ማዕከል','Center')],['personal',text('የግል','Personal')]]:my().center?[['center',text('የራሴ ማዕከል','My center')]]:my().department?[['hq',text('የራሴ ክፍል','My HQ department')]]:[['organization',text('ድርጅት','Organization')]];
+ const choices=director?[['organization',text('ለድርጅት','Organization')],['hq','HQ'],['center',text('ማዕከል','Center')],['personal',text('የግል','Personal')]]:mine()==='center'?[['center',text('የራሴ ማዕከል','My center')]]:mine()==='hq'?[['hq',text('የራሴ ክፍል','My HQ department')]]:[['personal',text('የራሴ ዕቅድና ሪፖርት','My private plans and reports')]];
  let sc=rec?.scopeType||(V11_KINDS[kind].personalOnly?'personal':choices[0][0]);if(V11_KINDS[kind].centerOnly)sc='center';
  const id=rec?.scopeId||(sc==='personal'?my().id:sc==='hq'?my().department:sc==='center'?my().center:'org');
  const deptOpts=[...HQ_UNITS.map(u=>[u.en,text(u.am,u.en)]),...(my().department?[[my().department,my().department]]:[])];
@@ -158,6 +158,11 @@ function scopeForm(rec){const director=caps().director;
 const SPECIAL_FIELDS=new Set(Object.values(NEXUS_DEPARTMENT_FIELDS).flat().map(x=>x[0]));
 function reportFields(rec){
  if(kind!=='monthly')return V11_KINDS[kind].fields.map(f=>field(f,rec?.data?.[f[0]]??'')).join('');
+ // Center and general staff workspaces are intentionally separate from HQ
+ // department reporting templates and cross-department dashboards.
+ if(!caps().director&&mine()!=='hq')return V11_KINDS.monthly.fields
+   .filter(f=>f[0]!=='departmentType'&&!SPECIAL_FIELDS.has(f[0]))
+   .map(f=>field(f,rec?.data?.[f[0]]??'')).join('');
  const unit=rec?.data?.departmentType||HQ_UNITS.find(u=>u.en===my().department||u.id===my().department)?.id||'';
  const common=V11_KINDS.monthly.fields.filter(f=>!SPECIAL_FIELDS.has(f[0]));
  return common.map(f=>f[0]==='departmentType'?`<label class="v11field"><span>${text('የክፍሉ የሪፖርት ዓይነት','Department template')}</span><select id="v11DepartmentType" data-field="departmentType">${opts([['','—'],...HQ_UNITS.map(u=>[u.id,text(u.am,u.en)])],unit)}</select></label>`:field(f,rec?.data?.[f[0]]??'')).join('')+
