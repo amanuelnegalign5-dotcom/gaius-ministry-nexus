@@ -72,6 +72,6 @@ test('frontend and worker support PPTX, XLSX, DOCX, PDFs and images, with protec
  assert.match(ui,/v11\.filePermissions/);
  assert.match(ui,/previewFile/);
  assert.doesNotMatch(index,/gaius-login-hero|gaius-login\.png/);
- assert.match(index,/icons\/official-logo\.jpg/);
+ assert.match(index,/icons\/gaius-white-logo\.webp/);
  assert.match(index,/gaius-brand\.css/);
 });
