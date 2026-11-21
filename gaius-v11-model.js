@@ -8,7 +8,8 @@ export const HQ_UNITS = [
  {id:'support',am:'ድጋፍ ሰጪ',en:'Support Team Department'},
  {id:'establishment',am:'የማዕከላት ምስረታና',en:'Department of Centers Establishment',unverified:true},
  {id:'media-pr',am:'ሚደያ እና ህዘብ ግንኙነት',en:'Media and Public Relation'},
- {id:'research',am:'የጥናት የምርምር እና ስልጠና',en:'Research and Training'}
+ {id:'research',am:'የጥናት የምርምር እና ስልጠና',en:'Research and Training'},
+ {id:'monday-staff',am:'የሰኞ ሠራተኞች ፕሮግራም',en:'Monday Staff Program'}
 ];
 export const CENTER_UNITS = [
  {id:'c-admin',am:'የአስተዳደር እና ፋይናንስ የአገልግሎት ክፍል',en:'Center Administration and Finance'},
@@ -65,6 +66,7 @@ export const NEXUS_DEPARTMENT_FIELDS = {
  'support': [['supportType','የድጋፍ ዓይነት','Support category','text'],['peopleReached','የደረሰላቸው ሰዎች','Number reached','number'],['resources','የተጠቀሙ ሀብቶች','Resources','long']],
  'admin-finance': [['procurement','ግዥና ሎጂስቲክስ','Procurement / logistics','long'],['plannedBudget','የታቀደ በጀት','Budget planned','number'],['spentBudget','ወጪ','Actual expenditure','number'],['financeEvidence','የፋይናንስ ማስረጃ','Finance evidence reference','text'],['pendingDecision','የሚጠብቅ ውሳኔ','Pending decisions','long']],
  'coordination': [['programs','የተስተባበሩ ፕሮግራሞች','Programs coordinated','number'],['unitsInvolved','የተሳተፉ ክፍሎች','Departments involved','long'],['centersInvolved','የተሳተፉ ማዕከላት','Participating centers','long']],
+ 'monday-staff': [['meetings','የሰኞ ስብሰባዎች','Monday meetings','number'],['staffPresent','የተገኙ ሠራተኞች','Staff present','number'],['absences','ያልተገኙ','Absences','number'],['decisions','የተወሰኑ ውሳኔዎች','Decisions','long'],['followup','የቀጣይ ክትትል ሥራዎች','Follow-up actions','long']],
  'establishment': [['proposedCenters','ታቅደው ያሉ ማዕከላት','Proposed centers','number'],['readiness','ዝግጁነት','Readiness assessment','long'],['leadersIdentified','የተለዩ መሪዎች','Leaders identified','number'],['venueResources','ቦታና ግብዓት','Venue and resources','long'],['pendingRequirements','ያልተሟሉ መስፈርቶች','Pending requirements','long']]
 };
 // Add common topical Excel-aligned fields. Distinct departmental forms determine visibility.
