@@ -120,6 +120,41 @@ function dashboard(){const all=records().filter(r=>r.kind!=='centers'&&r.kind!==
  <div class="v11tiles">${tile(text('የቀረቡ ጉዳዮች','Pending review'),pending.length)}${tile(text('የጸደቁ ጉዳዮች','Approved'),approved.length)}${tile(text('የማዕከላት መዝገብ','Centers'),centers.length)}${tile(text('ወርሃዊ ሪፖርቶች','Monthly reports'),month.length)}${tile(text('ያለፈ ቀነ ገደብ','Overdue'),incomplete.length)}${caps().director||caps().oversight?tile(text('የእሁድ ተሳታፊዎች ድምር','Sunday participants, recorded'),total('sundayProgram')):''}</div>
  <div class="v11box"><h2>${text('የቅርብ ጊዜ ሥራዎች','Recent activities')}</h2>${all.slice().sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)).slice(0,8).map(card).join('')||'<p>—</p>'}</div><div class="v11box"><h2>${text('በ14 ቀናት ውስጥ የሚደርሱ ስብሰባዎችና ሥራዎች','Upcoming meetings and deadlines (14 days)')}</h2>${upcoming.map(card).join('')||'<p>—</p>'}</div>`);
 }
+// One center is a privacy boundary, not merely a client-side dashboard filter.
+// The API has already filtered records based on the authenticated user's scope.
+function centerWorkspaceScreen(){
+ if(!centerWorkspaceAllowed()){section='overview';dashboard();return;}
+ const director=caps().director,ownCenter=my().center||'';
+ if(!director)selectedWorkCenter=ownCenter;
+ const related=records().filter(r=>r.scopeType==='center'&&
+   ['plans6','monthly','centerAttendance'].includes(r.kind)&&r.status!=='archived');
+ const names=[...new Set([...related.map(r=>r.scopeId),...records().filter(r=>r.kind==='centers').map(r=>r.data?.name),...(ownCenter?[ownCenter]:[])].filter(Boolean))].sort();
+ const chosen=director?selectedWorkCenter:ownCenter;
+ const visible=related.filter(r=>!chosen||r.scopeId===chosen);
+ const centers=chosen?[chosen]:[...new Set(visible.map(r=>r.scopeId))].sort();
+ const canCreateHere=!!chosen;
+ const createButtons=canCreateHere?['plans6','monthly','centerAttendance'].filter(k=>myAvailableKinds().includes(k)).map(k=>
+   `<button type="button" class="btn ghost" data-v="centerStart" data-kind="${k}">${text(V11_KINDS[k].am,V11_KINDS[k].en)} +</button>`).join(''):'';
+ const sections=centers.map(name=>{
+  const items=visible.filter(r=>r.scopeId===name);
+  const plan=items.filter(r=>r.kind==='plans6');
+  const reports=items.filter(r=>r.kind==='monthly');
+  const attend=items.filter(r=>r.kind==='centerAttendance');
+  const block=(title,arr)=>`<div class="v11box"><h3>${title} (${arr.length})</h3>${arr.sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)).map(card).join('')||`<p class="v11muted">${text('መዝገብ የለም','No records yet')}</p>`}</div>`;
+  return `<section class="v11centerGroup"><h2>${escape(name)}</h2>
+   ${block(text('የማዕከል ዕቅዶች','Center plans'),plan)}
+   ${block(text('የማዕከል ሪፖርቶች','Center reports'),reports)}
+   ${block(text('የእሁድና ሌሎች ስብሰባዎች መገኘት','Sunday and other meeting attendance'),attend)}
+  </section>`;
+ }).join('');
+ frame(`<div class="v11box"><h2>${text('የማዕከላት ዕቅድ፣ ሪፖርትና መገኘት','Center planning, reporting and attendance')}</h2>
+ <p class="v11guide">${text('የሰኞ የHQ ሠራተኞች መገኘት ከዚህ ገጽ ተለይቷል። እዚህ ያሉት መዝገቦች በማዕከል መዳረሻ መሠረት ይታያሉ።','Monday HQ staff attendance is separate. Records here are scoped to the authorized center.')}</p>
+ ${director?`<label class="v11field"><span>${text('ማዕከል ምረጥ','Filter by center')}</span><select id="v11WorkCenter">${opts([['',text('ሁሉንም ማዕከላት አሳይ','All centers')],...names.map(n=>[n,n])],chosen)}</select></label>`:
+ `<p><b>${text('የእኔ ማዕከል','My center')}:</b> ${escape(ownCenter)}</p>`}
+ <div class="v11actions">${createButtons}</div>${director&&!chosen?`<p class="v11muted">${text('አዲስ ዕቅድ ወይም ሪፖርት ለመጨመር መጀመሪያ አንድ ማዕከል ምረጥ።','Select a center before creating a new plan, report or attendance record.')}</p>`:''}
+ </div>
+ ${sections||`<div class="v11box"><p>${text('ከዚህ ማዕከል የተመዘገበ መረጃ የለም።','No saved center records yet.')}</p></div>`}`);
+}
 function myAvailableKinds(){return (caps().allowedKinds||[]).filter(k=>V11_KINDS[k]);}
 const opts=(values,selected)=>values.map(([v,l])=>`<option value="${escape(v)}" ${String(v)===String(selected)?'selected':''}>${escape(l)}</option>`).join('');
 function userOptions(cur){return opts([['','—'],...(state.directory||[]).map(u=>[u.id,u.name+' · '+(u.department||u.center||u.role)])],cur);}
@@ -389,7 +424,13 @@ root.addEventListener('change',e=>{
   }
   return;
  }
- if(e.target.dataset.analyticsFilter){analysisFilters[e.target.dataset.analyticsFilter]=e.target.value;selectedCenter='';render();return;}
+ if(e.target.id==='v11WorkCenter'&&caps().director){selectedWorkCenter=e.target.value;render();return;}
+  if(e.target.dataset.field==='eventType'){
+    const name=root.querySelector('[data-field="meetingName"]');
+    if(name)name.required=e.target.value==='other_meeting';
+    return;
+  }
+  if(e.target.dataset.analyticsFilter){analysisFilters[e.target.dataset.analyticsFilter]=e.target.value;selectedCenter='';render();return;}
  if(e.target.id==='v11FileScope'){const unit=$('v11FileUnit');if(unit)unit.value=e.target.value==='personal'?my().id:e.target.value==='organization'?'org':'';return;}
  if(e.target.id==='v11DepartmentType'){const group=$('v11DeptExtras');if(group){group.innerHTML=(NEXUS_DEPARTMENT_FIELDS[e.target.value]||[]).map(f=>field(f,editing?.data?.[f[0]]??'')).join('');}return;}
  if(e.target.id==='v11Kind'){kind=e.target.value;editing=null;render();}else if(e.target.id==='v11Scope'){const x=$('v11ScopeId');if(x)x.value=e.target.value==='personal'?my().id:e.target.value==='hq'?my().department||'':e.target.value==='center'?my().center||'':'org';}});
@@ -397,7 +438,13 @@ root.addEventListener('click',e=>{const b=e.target.closest('[data-v]');if(!b)ret
  withBusy(async()=>{const op=b.dataset.v,id=b.dataset.id;
  if(op==='close'){close();return;}
  if(op==='showCenter'){selectedCenter=b.dataset.center;section='analytics';render();return;}
- if(op==='openKind'){kind=b.dataset.kind;editing=null;section='records';await render();return;}
+ if(op==='centerStart'){
+   if(!centerWorkspaceAllowed()||!selectedWorkCenter)throw Error('forbidden');
+   const next=b.dataset.kind;
+   if(!['plans6','monthly','centerAttendance'].includes(next)||!myAvailableKinds().includes(next))throw Error('forbidden');
+   kind=next;editing=null;section='records';await render();return;
+  }
+  if(op==='openKind'){kind=b.dataset.kind;editing=null;section='records';await render();return;}
  if(op==='completeVisit'){const item=records().find(r=>r.id===id);if(!item)throw Error('missing');if(!item.data.actualDate||!item.data.observations)throw Error(text('መጀመሪያ የተጎበኘበትን ቀንና የታዩትን ነገሮች በEdit ሙላ','Edit visit to enter actual date and observations first'));await store.command('v11.completeVisit',{id,version:item._v,actualDate:item.data.actualDate,observations:item.data.observations});await update();return;}
  if(op==='section'){section=b.dataset.section;editing=null;await update();return;}
  if(op==='cancel'){editing=null;render();return;}
