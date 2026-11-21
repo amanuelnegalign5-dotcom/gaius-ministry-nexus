@@ -27,7 +27,9 @@ export function checkReleaseAssets(){
  }
  assert.ok(sw.includes("'./icons/official-logo.jpg'"),'PWA must cache the chosen white official logo');
  assert.ok(existsSync(resolve(root,'icons/official-logo.jpg')),'White logo image must exist');
- assert.match(html,/class="logo" style="background-image:url\(\.\/icons\/official-logo\.jpg\)"/);
+ assert.ok(sw.includes("'./icons/gaius-white-logo.webp'"),'PWA must precache the new white logo');
+ assert.ok(existsSync(resolve(root,'icons/gaius-white-logo.webp')),'User supplied logo asset missing');
+ assert.match(html,/class="logo"[^>]*background-image:url\(\.\/icons\/gaius-white-logo\.webp\)/);
  assert.doesNotMatch(html,/gaius-login-hero|icons\/gaius-login\.png/,'Oversized dark login artwork must not be reintroduced');
  assert.doesNotMatch(sw,/icons\/gaius-login\.png/,'Retired black banner must not be pre-cached');
  return {version,cache:marker[1]};

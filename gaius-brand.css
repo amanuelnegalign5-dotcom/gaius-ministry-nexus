@@ -1,4 +1,4 @@
-/* Gaius Nexus 11.2.1 — compact white official logo; no wide black login banner. */
+/* Gaius Nexus 11.2.2 — supplied Gaius Ministry logo on white background; no wide black login banner. */
 #auth{
   min-height:100dvh;max-width:none;display:grid;place-items:center;
   background:linear-gradient(145deg,#edf6ef 0%,#f9fbf9 55%,#e6f2e8 100%);
@@ -12,10 +12,10 @@
 }
 #auth .login>.top{align-items:center;flex-wrap:wrap}
 #auth .login>.top .logo{
-  width:108px;height:108px;min-width:108px;
+  width:min(250px,57vw);height:110px;min-width:0;
   background-color:#fff;background-size:contain;
-  border:1px solid #e1ebe3;border-radius:14px;
-  box-shadow:0 2px 8px #1b4f2710;
+  background-position:center;background-repeat:no-repeat;
+  border:0;border-radius:10px;box-shadow:none;
 }
 #auth .login h1{font-size:clamp(1.3rem,4vw,1.75rem);color:#21583a}
 #auth .login input:focus-visible,#auth .login select:focus-visible,
@@ -38,7 +38,7 @@
 @media(max-width:600px){
   #auth{padding:9px}
   #auth .login{border-radius:14px}
-  #auth .login>.top .logo{width:94px;height:94px;min-width:94px}
+  #auth .login>.top .logo{width:min(220px,53vw);height:96px;min-width:0}
   .v11logo{width:60px;height:60px}
   .v11previewFrame{min-height:58vh}
 }
