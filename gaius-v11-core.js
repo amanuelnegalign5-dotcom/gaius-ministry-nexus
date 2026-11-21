@@ -253,7 +253,7 @@ export function v11State(db,u){
  const scopeId=scopeType==='center'?u.center:scopeType==='hq'?u.department:scopeType==='personal'?u.id:'org';
  const allowedKinds=isDirector(u)?V11_KINDS_LIST.filter(k=>!V11_KINDS[k].personalOnly||u.role==='country_director'):V11_KINDS_LIST.filter(k=>canCreate(u,k,scopeType,scopeId));
  return {v11:{records:db.all('v11_records').filter(r=>canRead(u,r)),
-  capabilities:{director:isDirector(u),oversight:isDirector(u),canApprove:granted(u,'v11:approve'),canPublish:granted(u,'v11:publish'),canEditManual:granted(u,'v11:edit_manual'),allowedKinds,canUploadFile:scopeType!=='personal',defaultScopeType:scopeType,defaultScopeId:scopeId,hqReports:isDirectorRole(u)||hqLeader(u)},
+  capabilities:{director:isDirector(u),oversight:isDirector(u),canApprove:granted(u,'v11:approve'),canPublish:granted(u,'v11:publish'),canEditManual:granted(u,'v11:edit_manual'),allowedKinds,canUploadFile:!!active(u),defaultScopeType:scopeType,defaultScopeId:scopeId,hqReports:isDirectorRole(u)||hqLeader(u)},
   files:db.all('v11_files').filter(f=>canReadFile(u,f)).map(f=>({id:f.id,name:f.name,type:f.type,size:f.size,scopeType:f.scopeType,scopeId:f.scopeId,ownerId:f.ownerId,status:f.status,createdAt:f.createdAt,description:f.description||'',category:f.category||'general',access:(isDirectorRole(u)||f.ownerId===u.id)?f.access:null}))}};
 }
 // Explicit grants set by Directors. Files uploaded after this release are
@@ -302,7 +302,7 @@ function updateFileAccess(db,u,p){
 }
 export function canUploadFile(u,scopeType,scopeId){
  if(!active(u)||!validScope(scopeType))return false;
- if(scopeType==='personal')return isDirector(u)&&scopeId===u.id;
+ if(scopeType==='personal')return scopeId===u.id;
  if(isDirector(u))return true;
  if(scopeType==='center')return centerMember(u)&&sameUnit(u.center,scopeId);
  if(scopeType==='hq')return hqLeader(u)&&sameUnit(u.department,scopeId);
