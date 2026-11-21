@@ -18,7 +18,9 @@ function belongs(u,r){
  return r.scopeType==='organization';
 }
 // Default-deny, unit-scoped policy. A permission flag does not erase the user's unit boundary.
-const CENTER_ROLES=new Set(['center_leader','center_department_leader']);
+const CENTER_ROLES=new Set(['center_leader','potential_center_leader','center_department_leader','potential_department_leader']);
+const CENTER_DEPARTMENT_ROLES=new Set(['center_department_leader','potential_department_leader']);
+const CENTER_ATTENDANCE_EDITORS=new Set(['center_leader','center_department_leader']);
 const unit=x=>String(x??'').trim().toLowerCase();
 const sameUnit=(a,b)=>!!unit(a)&&unit(a)===unit(b);
 const hqLeader=u=>isHQReporter(u);
@@ -47,7 +49,7 @@ function canRead(u,r){
  if(r.scopeType==='center'){
   if(!centerMember(u)||!sameUnit(u.center,r.scopeId))return false;
   if(r.ownerId===u.id)return true;
-  if(u.role==='center_leader')return sharedStatus(r);
+  if(['center_leader','potential_center_leader'].includes(u.role))return sharedStatus(r);
   return centerDepartmentMatches(u,r)&&sharedStatus(r);
  }
  if(r.scopeType==='hq'){
@@ -58,6 +60,9 @@ function canRead(u,r){
 }
 function canCreate(u,k,scopeType,scopeId){
  if(!active(u)||!V11_KINDS[k])return false;
+ // Center attendance is never an HQ or personal Monday entry.
+ if(k==='centerAttendance')return scopeType==='center'&&
+  (isDirector(u)||(CENTER_ATTENDANCE_EDITORS.has(u.role)&&sameUnit(scopeId,u.center)));
  if(V11_KINDS[k].personalOnly)return isDirector(u)&&scopeType==='personal'&&scopeId===u.id&&u.role==='country_director';
  if(scopeType==='personal'){
   if(isDirector(u))return scopeId===u.id&&!V11_KINDS[k].centerOnly;
@@ -90,6 +95,11 @@ function validate(k,input){
   else out[key]=v;
  }
  if(k==='plans6'&&out.start&&out.end)check(out.start<=out.end,'dateInvalid',400);
+ if(k==='centerAttendance'){
+  check(['sunday','biweekly','special','other_meeting'].includes(out.eventType),'meetingTypeInvalid',400);
+  if(out.eventType==='other_meeting')check(!!out.meetingName,'required:meetingName',400);
+  if(out.eventType==='sunday')check(new Date(out.date+'T12:00:00Z').getUTCDay()===0,'sundayDateRequired',400);
+ }
  return out;
 }
 function audit(db,actor,action,record){db.put('audit',{id:crypto.randomUUID(),actorId:actor.id,actorName:actor.name,action,target:record?.id||record,at:at()});}
@@ -109,7 +119,9 @@ function save(db,u,p){
  }
  const data=validate(kind,p.data||{});
  // A center department cannot label or publish reports for a different department.
- if(!isDirector(u)&&scopeType==='center'&&u.role==='center_department_leader'&&kind==='monthly'){
+ if(!isDirector(u)&&scopeType==='center'&&CENTER_DEPARTMENT_ROLES.has(u.role)&&
+  ['monthly','plans6','centerAttendance'].includes(kind)){
+  check(!!u.department,'departmentScopeMismatch');
   check(!data.departmentType||sameUnit(data.departmentType,u.department),'departmentScopeMismatch');
   data.departmentType=u.department;
  }
@@ -127,7 +139,10 @@ function save(db,u,p){
  if(kind==='followups'){check(!db.all('v11_records').some(r=>r.id!==old?.id&&r.kind==='followups'&&r.scopeId===scopeId&&r.data?.week===data.week&&r.status!=='archived'),'duplicateWeeklyFollowup',409);}
  if(kind==='centerAttendance'){
    const participant=db.one('users',data.participantId);
-   check(participant&&['center_leader','potential_center_leader'].includes(participant.role)&&participant.center===scopeId,'participantRoleInvalid',400);
+   check(participant&&CENTER_ROLES.has(participant.role)&&sameUnit(participant.center,scopeId),'participantRoleInvalid',400);
+   if(!isDirector(u)&&u.role==='center_department_leader')
+    check(sameUnit(participant.department,u.department),'departmentScopeMismatch');
+   data.departmentType=participant.department||'';
    check(!db.all('v11_records').some(r=>r.id!==old?.id&&r.kind===kind&&r.scopeId===scopeId&&r.data.date===data.date&&r.data.eventType===data.eventType&&r.data.participantId===data.participantId&&r.status!=='archived'),'attendanceExists',409);
  }
  const record={id:old?.id||crypto.randomUUID(),kind,scopeType,scopeId,ownerId:old?.ownerId||u.id,ownerName:old?.ownerName||u.name,
