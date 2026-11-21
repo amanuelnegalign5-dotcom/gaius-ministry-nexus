@@ -10,7 +10,7 @@ const text=(am,en)=>localLang()==='am'?am:en;
 const statusText=s=>({draft:text('ረቂቅ','Draft'),submitted:text('ለማጽደቅ ቀርቧል','Submitted'),approved:text('ጸድቋል','Approved'),revision_requested:text('ማሻሻያ ተጠይቋል','Changes requested'),rejected:text('ውድቅ','Rejected'),archived:text('ተመዝግቦ ተዘግቷል','Archived'),pending:text('ማጽደቅ ይጠብቃል','Pending')}[s]||s);
 const scopeLabel=s=>({organization:text('ድርጅት','Organization'),hq:'HQ',center:text('ማዕከል','Center'),personal:text('የግል','Personal')}[s]||s);
 const validFileName=name=>String(name).replace(/[^\p{L}\p{N}_.-]+/gu,'_').slice(0,85)||'GAIUS';
-let active=false,section='overview',state=null,kind='plans6',editing=null,queueBusy=false;
+let active=false,section='overview',state=null,kind='plans6',editing=null,queueBusy=false,previewUrl=null;
 let analysisFilters={month:'',center:'',department:'',ethiopianYear:'',ethiopianMonth:'',startDate:'',endDate:'',focus:'',status:'',unit:''},selectedCenter='',selectedWeek='';
 const root=document.createElement('section');root.id='gaiusV11';root.className='v11root';root.hidden=true;
 const app=$('app'),oldMain=app.querySelector('main'),header=app.querySelector('header .actions')||app.querySelector('header');
@@ -73,6 +73,7 @@ async function open(){
  }finally{opening=false;launch.disabled=false;}
 }
 function close(){
+ if(previewUrl){URL.revokeObjectURL(previewUrl);previewUrl=null;}
  ++viewEpoch;
  active=false;
  root.hidden=true;
@@ -103,7 +104,7 @@ const my=()=>state?.me||{};const caps=()=>state?.v11?.capabilities||{};const rec
 const mine=()=>caps().defaultScopeType||(my().center?'center':my().department?'hq':'personal');
 const appStrings={director:['የዳይሬክተር ሥራ','Director workspace'],analytics:['የማዕከላት ትንታኔ','Center analytics'],overview:['ዋና እይታ','Overview'],records:['ሥራ መዝገቦች','Operations'],files:['የሰነድ ማከማቻ','File uploads'],offline:['ያልተላኩ ረቂቆች','Offline drafts'],reference:['የድርጅት ስሞች','Official names']};
 const tr=s=>appStrings[s]?(localLang()==='am'?appStrings[s][0]:appStrings[s][1]):s;
-function frame(content){root.innerHTML=`<div class="v11wrap"><div class="v11top"><div class="v11identity"><div><h1>Gaius Nexus <small>v11.1</small></h1><p>${text('የድርጅት አመራር፣ እቅድ፣ ሪፖርትና ክትትል','Ministry leadership, planning, reporting and follow-up')}</p></div></div><button type="button" class="btn ghost" data-v="close">${text('ወደ v10 ገጾች','Back to existing pages')}</button></div>
+function frame(content){root.innerHTML=`<div class="v11wrap"><div class="v11top"><div class="v11identity"><img class="v11logo" src="./icons/official-logo.jpg" alt="Gaius Ministry logo"><div><h1>Gaius Nexus <small>v11.2</small></h1><p>${text('የድርጅት አመራር፣ እቅድ፣ ሪፖርትና ክትትል','Ministry leadership, planning, reporting and follow-up')}</p></div></div><button type="button" class="btn ghost" data-v="close">${text('ወደ v10 ገጾች','Back to existing pages')}</button></div>
   <div class="v11nav">${Object.keys(appStrings).filter(x=>x==='director'?caps().director:x==='analytics'?(caps().director||caps().oversight):x==='records'?myAvailableKinds().length>0:x==='files'?(caps().canUploadFile||(state?.v11?.files||[]).length>0):true).map(x=>`<button class="${section===x?'on':''}" type="button" data-v="section" data-section="${x}">${tr(x)}</button>`).join('')}</div><div id="v11notice" class="v11notice" hidden></div><div class="v11content">${content}</div></div>`;}
 function tile(title,value,desc=''){return `<div class="v11tile"><span>${escape(title)}</span><strong>${escape(value)}</strong><small>${escape(desc)}</small></div>`;}
 function dashboard(){const all=records().filter(r=>r.kind!=='centers'&&r.kind!=='centerUnits');const approved=all.filter(r=>r.status==='approved'),pending=all.filter(r=>r.status==='submitted');
@@ -191,13 +192,32 @@ function recordsScreen(){const list=myAvailableKinds(),def=V11_KINDS[kind];if(!l
 function legacyReports(){const items=window.GAIUS_V10?.originals||[];return `<div class="v11box"><h2>${text('የv10 የጥቅምት ስድስት ኦሪጅናል ሪፖርቶች','Six preserved v10 October source reports')}</h2><p class="v11guide">${text('ይህ የታሪካዊ ጽሑፍ ነው፤ አዲስ ሪፖርት አይደለም።','Historical originals, not newly submitted reports.')}</p>${items.map((r,i)=>`<article class="v11record"><h3>${escape(localLang()==='am'?r.amTitle:r.enTitle)}</h3><details><summary>${text('ይዘት አሳይ','Show content')}</summary><pre class="v11body">${escape(localLang()==='am'?r.am:r.en)}</pre></details><button type="button" data-v="legacy-export" data-legacy="${i}" data-as="docx">Word</button> <button type="button" data-v="legacy-export" data-legacy="${i}" data-as="pdf">PDF</button></article>`).join('')}</div>`;}
 // Accessible native file inputs remain directly tappable on iPhone and desktop.
 function filePickerHTML(id,type='json'){
- const json=type==='json',accept=json?'.json,application/json':'.pdf,.docx,.jpg,.jpeg,.png,.webp,.mp4,.txt';
+ const json=type==='json',accept=json?'.json,application/json':'.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv,.txt,.jpg,.jpeg,.png,.webp,.mp4';
  const label=json?text('የJSON ፋይል ምረጥ','Choose JSON file'):text('ሰነድ/ምስል ምረጥ','Choose document or image');
  const help=json?text('ይህ ቅጽ JSON (.json) ብቻ ይቀበላል። Word (.docx) በቀጥታ አትምረጥ፤ በiPhone Files → Downloads ውስጥ የተቀመጠውን JSON ምረጥ።','Only a .json import file works here, not the original Word documents. On iPhone select Browse → Downloads in Files.'):text('ይህ ባህሪ Cloudflare R2 ማከማቻ ይፈልጋል።','This file upload requires Cloudflare R2 storage.');
  return `<div class="v11picker"><label for="${escape(id)}" class="v11pickerLabel">${escape(label)}</label><input class="v11pickerInput" type="file" id="${escape(id)}" accept="${accept}" aria-describedby="${escape(id)}Help ${escape(id)}Status" required><p class="v11pickerStatus" id="${escape(id)}Status" data-file-status="${escape(id)}" role="status" aria-live="polite">${text('ፋይል አልተመረጠም','No file selected')}</p><p class="v11pickerHelp" id="${escape(id)}Help">${escape(help)}</p></div>`;
 }
-function filesScreen(){const files=state.v11.files||[],mediaReady=state.services?.mediaUploads===true;const sc=my().center?'center':my().department?'hq':'organization',id=my().center||my().department||'org';
- frame(`<div class="v11box"><h2>${text('ሰነድ፣ ፎቶ እና ቪዲዮ','Secure document and media uploads')}</h2><p class="v11guide">${mediaReady?text('የተጫኑ ሰነዶች ከመታየታቸው በፊት ማጽደቅ ይፈልጋሉ።','Uploaded documents require review before publication.'):text('Cloudflare R2 ማከማቻ አልተገናኘም። General Upload ለጊዜው ዝግ ነው። የDirector JSON Import በተለየ ገጽ ላይ ይሠራል።','Cloudflare R2 storage is not configured. General uploads are disabled, but Director JSON imports work separately without R2.')}</p><form id="v11Upload">${filePickerHTML('v11File','attachment')}${caps().director?`<label class="v11field"><span>${text('የፋይሉ ሚስጥራዊነት','File access scope')}</span><select id="v11FileScope"><option value="personal">${text('የግል — ለእኔ ብቻ','Personal — owner only')}</option><option value="organization">${text('ለድርጅቱ — ከጸደቀ በኋላ','Organization — after approval')}</option></select></label>`:`<input type="hidden" id="v11FileScope" value="${sc}">`}<input type="hidden" id="v11FileUnit" value="${escape(caps().director?my().id:id)}"><button class="btn" type="submit" ${mediaReady?'':'disabled'}>${text('ለማጽደቅ ጫን','Upload for review')}</button></form></div><div class="v11box"><h2>${text('የተፈቀዱ የእኔ ፋይሎች','Accessible files')} (${files.length})</h2>${files.map(f=>`<article class="v11record"><h3>${escape(f.name)}</h3><p>${statusText(f.status)} · ${(f.size/1024).toFixed(0)} KB · ${scopeLabel(f.scopeType)}</p><div class="v11actions"><button type="button" data-v="download" data-id="${f.id}">${text('አውርድ','Download')}</button>${caps().director||caps().canApprove?`<button type="button" data-v="fileReview" data-id="${f.id}" data-decision="approved">${text('አጽድቅ','Approve')}</button><button type="button" data-v="fileReview" data-id="${f.id}" data-decision="rejected">${text('ውድቅ','Reject')}</button><button type="button" data-v="fileReview" data-id="${f.id}" data-decision="removed">${text('አስወግድ','Remove')}</button>`:''}</div></article>`).join('')||'<p>—</p>'}</div>`);
+function filesScreen(){
+ if(previewUrl){URL.revokeObjectURL(previewUrl);previewUrl=null;}
+ const files=state?.v11?.files||[],ready=state?.services?.mediaUploads===true;
+ const canUpload=caps().canUploadFile,admin=caps().director;
+ const scope=admin?'personal':caps().defaultScopeType||mine();
+ const scopeId=admin?my().id:caps().defaultScopeId||my().id;
+ const users=(state?.directory||[]).filter(u=>u.id!==my().id&&u.accountStatus==='active');
+ const fmt=f=>f.type==='application/pdf'?'PDF':f.type?.startsWith('image/')?'Image':/presentation|powerpoint/.test(f.type)?'PowerPoint':/spreadsheet|excel|csv/.test(f.type)?'Excel':/word/.test(f.type)?'Word':f.type==='video/mp4'?'Video':'File';
+ const canPreview=f=>f.type==='application/pdf'||['image/png','image/jpeg','image/webp','text/plain','text/csv'].includes(f.type);
+ const cards=files.map(f=>`<article class="v11record v11filecard"><div class="v11recordhead"><h3>📁 ${escape(f.name)}</h3><span class="v11status">${escape(statusText(f.status))}</span></div><p class="v11muted">${fmt(f)} · ${(f.size/1024).toFixed(0)} KB · ${escape(scopeLabel(f.scopeType))} / ${escape(f.scopeId)}</p>
+ <div class="v11actions"><button type="button" data-v="download" data-id="${escape(f.id)}">${text('አውርድ','Download')}</button>${canPreview(f)?`<button type="button" data-v="previewFile" data-id="${escape(f.id)}">${text('ተመልከት','Preview')}</button>`:''}
+ ${admin?`<button type="button" data-v="fileReview" data-id="${escape(f.id)}" data-decision="approved">${text('አጽድቅ','Approve')}</button><button type="button" data-v="fileReview" data-id="${escape(f.id)}" data-decision="rejected">${text('ውድቅ','Reject')}</button>`:''}</div>
+ ${admin?`<details><summary>${text('የሰነዱን መዳረሻ አስተዳድር','Manage file access')}</summary><form class="v11FileGrants" data-file-id="${escape(f.id)}"><p class="v11guide">${text('በአስተዳዳሪ የተመረጡ ሰዎች ሰነዱ ከጸደቀ በኋላ ብቻ ይደርሳቸዋል።','Selected people can open the file only after approval. This does not grant HQ report access.')}</p><div class="v11grants">${users.map(u=>`<label><input type="checkbox" name="allowedUser" value="${escape(u.id)}" ${(f.allowedUserIds||[]).includes(u.id)?'checked':''}> ${escape(u.name)} · ${escape(u.role)}</label>`).join('')||'<p>No other active users</p>'}</div><button class="btn" type="submit">${text('መዳረሻ አስቀምጥ','Save access permissions')}</button></form></details>`:''}
+ </article>`).join('')||'<p>—</p>';
+ const choices=admin?`<label class="v11field"><span>${text('የፋይሉ ወሰን','Access scope')}</span><select id="v11FileScope"><option value="personal">${text('የግል','Personal')}</option><option value="organization">${text('ድርጅት','Organization')}</option><option value="hq">HQ</option><option value="center">${text('ማዕከል','Center')}</option></select></label><label class="v11field"><span>${text('የክፍሉ/ማዕከሉ ትክክለኛ ስም','Exact HQ department or center name')}</span><input id="v11FileUnit" value="${escape(scopeId)}" placeholder="e.g. Media or Gerji"></label>`:
+ `<input type="hidden" id="v11FileScope" value="${escape(scope)}"><input type="hidden" id="v11FileUnit" value="${escape(scopeId)}">`;
+ frame(`<div class="v11box"><h2>${text('የተጠበቀ የሰነዶች ማከማቻ','Secure document library')}</h2><p class="v11guide">${text('PDF፣ Word፣ PowerPoint፣ Excel፣ ምስሎች፣ CSV፣ TXT እና MP4 ይደገፋሉ። የግል ሰነዶች ወደ Public GitHub አይሄዱም።','Supports PDF, Word, PowerPoint, Excel, images, CSV, TXT and MP4. Private documents never go into the public GitHub site.')}</p>
+ ${!ready?`<p role="status" class="v11notice v11error">${text('የCloudflare R2 ማከማቻ አልተገናኘም። በCloudflare ላይ MEDIA_BUCKET ማዋቀር ያስፈልጋል።','Cloudflare R2 storage is not connected. An administrator must configure the private MEDIA_BUCKET binding.')}</p>`:''}
+ ${canUpload?`<form id="v11Upload">${filePickerHTML('v11File','attachment')}${choices}<button class="btn" type="submit" ${ready?'':'disabled'}>${text('ለማጽደቅ ፋይል ጫን','Upload for approval')}</button></form>`:`<p>${text('የፋይል መጫን ፈቃድ ከአስተዳዳሪ ጠይቅ።','Ask an administrator to grant file upload access.')}</p>`}</div>
+ <div id="v11filepreview" class="v11box" hidden></div>
+ <div class="v11box"><h2>${text('የሚደርሱኝ ፋይሎች','Files I can access')} (${files.length})</h2>${cards}</div>`);
 }
 const DBNAME='gaius-v11-local-drafts', STORE='drafts';
 function draftDb(){return new Promise((resolve,reject)=>{const r=indexedDB.open(DBNAME,1);r.onupgradeneeded=()=>r.result.createObjectStore(STORE,{keyPath:'id'});r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});}
@@ -342,6 +362,13 @@ root.addEventListener('submit',e=>{e.preventDefault();withBusy(async()=>{
   if(!confirm(text('16ቱን ዕቅዶች ወደ የግል መዝገብህ ልጫን?','Import 16 goals into your personal workspace?')))return;
   const result=await store.command('v11.importDirectorPlan',{plan});await update();alertMsg(text('የተጫኑ ግቦች','Imported objectives')+': '+result.count);
  }
+ if(e.target.matches('form.v11FileGrants')){
+  if(!caps().director)throw Error('forbidden');
+  const id=e.target.dataset.fileId;
+  const allowedUserIds=[...e.target.querySelectorAll('input[name="allowedUser"]:checked')].map(x=>x.value);
+  await store.command('v11.filePermissions',{id,allowedUserIds});
+  await update();alertMsg(text('የሰነዱ ፈቃድ ተቀምጧል','Document access saved'));return;
+ }
  if(e.target.id==='v11Upload'){
   if(state.services?.mediaUploads!==true)throw Error(text('Cloudflare R2 ማከማቻ አልተዋቀረም','Cloudflare R2 storage is not configured'));
   const file=$('v11File')?.files?.[0];if(!file)throw Error(text('መጀመሪያ ፋይል ምረጥ','Choose a file first'));const result=await store.uploadFile(file,$('v11FileScope').value,$('v11FileUnit').value);
@@ -360,7 +387,7 @@ root.addEventListener('change',e=>{
   return;
  }
  if(e.target.dataset.analyticsFilter){analysisFilters[e.target.dataset.analyticsFilter]=e.target.value;selectedCenter='';render();return;}
- if(e.target.id==='v11FileScope'){const unit=$('v11FileUnit');if(unit)unit.value=e.target.value==='personal'?my().id:'org';return;}
+ if(e.target.id==='v11FileScope'){const unit=$('v11FileUnit');if(unit)unit.value=e.target.value==='personal'?my().id:e.target.value==='organization'?'org':'';return;}
  if(e.target.id==='v11DepartmentType'){const group=$('v11DeptExtras');if(group){group.innerHTML=(NEXUS_DEPARTMENT_FIELDS[e.target.value]||[]).map(f=>field(f,editing?.data?.[f[0]]??'')).join('');}return;}
  if(e.target.id==='v11Kind'){kind=e.target.value;editing=null;render();}else if(e.target.id==='v11Scope'){const x=$('v11ScopeId');if(x)x.value=e.target.value==='personal'?my().id:e.target.value==='hq'?my().department||'':e.target.value==='center'?my().center||'':'org';}});
 root.addEventListener('click',e=>{const b=e.target.closest('[data-v]');if(!b)return;
@@ -378,5 +405,20 @@ root.addEventListener('click',e=>{const b=e.target.closest('[data-v]');if(!b)ret
  if(op==='sync'){await sync();return;}
  if(op==='dropDraft'){if(confirm(text('ያልተላከ ረቂቅ ልሰርዝ?','Delete the unsynced local draft?'))){await draftDelete(id);await render();}return;}
  if(op==='fileReview'){if(b.dataset.decision==='removed'&&!confirm(text('ፋይሉ ከR2 ማከማቻ ይሰረዛል። ለመቀጠል እርግጠኛ ነህ?','The file will be deleted from storage. Continue?')))return;await store.command('v11.fileReview',{id,decision:b.dataset.decision});await update();alertMsg('Updated');return;}
+ if(op==='previewFile'){
+   const f=state.v11.files.find(x=>x.id===id);if(!f)throw Error('missing');
+   const host=$('v11filepreview');if(!host)return;
+   if(previewUrl)URL.revokeObjectURL(previewUrl);
+   const blob=await store.downloadFile(id);
+   previewUrl=URL.createObjectURL(blob);
+   host.hidden=false;host.replaceChildren();
+   const title=document.createElement('h2');title.textContent=f.name;host.append(title);
+   const close=document.createElement('button');close.className='btn ghost';close.type='button';close.textContent=text('ቅድመ እይታ ዝጋ','Close preview');
+   close.onclick=()=>{host.replaceChildren();host.hidden=true;if(previewUrl){URL.revokeObjectURL(previewUrl);previewUrl=null;}};
+   host.append(close);
+   if(f.type.startsWith('image/')){const img=document.createElement('img');img.src=previewUrl;img.alt=f.name;img.className='v11previewImage';host.append(img);}
+   else{const frame=document.createElement('iframe');frame.src=previewUrl;frame.title=f.name;frame.className='v11previewFrame';frame.setAttribute('sandbox','');host.append(frame);}
+   host.scrollIntoView({block:'start',behavior:'smooth'});return;
+  }
  if(op==='download'){const file=state.v11.files.find(f=>f.id===id);const blob=await store.downloadFile(id);saveDownload(blob,file?.name||'GAIUS-file');return;}
  });});

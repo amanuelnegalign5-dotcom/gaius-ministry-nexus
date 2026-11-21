@@ -28,8 +28,8 @@ test('selected filename is announced and wrong source type is explicitly explain
 test('general media upload is disabled until the authenticated backend confirms R2',()=>{
  assert.match(worker,/if\(route==='state'\)\{/);
  assert.match(worker,/services:\{mediaUploads:!!this\.env\.MEDIA_BUCKET\}/);
- assert.match(ui,/mediaReady=state\.services\?\.mediaUploads===true/);
- assert.match(ui,/mediaReady\?'':'disabled'/);
+ assert.match(ui,/ready=state\?\.services\?\.mediaUploads===true/);
+ assert.match(ui,/ready\?'':'disabled'/);
  assert.match(ui,/if\(state\.services\?\.mediaUploads!==true\)throw Error/);
  assert.match(ui,/filePickerHTML\('v11File','attachment'\)/);
 });
@@ -41,7 +41,7 @@ test('JSON imports are separate from R2 uploads, preserving director-only server
  assert.match(backend,/check\(active\(u\)&&u\.role==='country_director','forbidden'\)/);
 });
 test('updated iOS launcher invalidates JS and CSS without changing private data',()=>{
- assert.match(html,/gaius-v11-ui\.js\?v=11\.1\.6/);
- assert.match(html,/gaius-v11\.css\?v=11\.1\.5/);
- assert.match(sw,/11\.1\.6-nine-hq-reports/);
+ assert.match(html,/gaius-v11-ui\.js\?v=11\.2\.0/);
+ assert.match(html,/gaius-v11\.css\?v=11\.2\.0/);
+ assert.match(sw,/11\.2\.0-brand-documents/);
 });

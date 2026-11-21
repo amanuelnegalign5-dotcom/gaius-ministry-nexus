@@ -11,7 +11,7 @@ export const roleDepartments = {
   center_leader:'',potential_center_leader:'',center_department_leader:'',potential_department_leader:'',volunteer:'',hq_staff:''
 };
 export const directors = ['country_director','international_director'];
-export const permissions = ['reports','review_reports','review_plans','comments','attendance','announcements','projects','documents','manage_users','v11:oversight','v11:approve','v11:publish','v11:teaching','v11:edit_manual'];
+export const permissions = ['reports','review_reports','review_plans','comments','attendance','announcements','projects','documents','manage_users','v11:oversight','v11:approve','v11:publish','v11:teaching','v11:edit_manual','v11:upload_file'];
 export const sourceIds = ['event','counseling','research','followup','service','media'];
 export const seedPeople = [
   {id:'selam',name:'Selam',role:'service_leader',regular:false},

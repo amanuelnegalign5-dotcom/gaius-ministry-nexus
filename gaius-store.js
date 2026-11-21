@@ -94,7 +94,10 @@ export async function uploadFile(file,scopeType='organization',scopeId='org'){
   if(!file||file.size>10*1024*1024)throw new AppError('fileTooLarge',413);
   const token=sessionStorage.getItem(tokenKey);
   let res;try{res=await fetch(api+'/file/upload',{method:'POST',cache:'no-store',credentials:'omit',
-    headers:{'Authorization':'Bearer '+token,'Content-Type':file.type||({pdf:'application/pdf',docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',mp4:'video/mp4',txt:'text/plain'}[file.name.split('.').pop().toLowerCase()]||'application/octet-stream'),
+    headers:{'Authorization':'Bearer '+token,'Content-Type':({pdf:'application/pdf',docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',doc:'application/msword',
+       pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation',ppt:'application/vnd.ms-powerpoint',
+       xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',xls:'application/vnd.ms-excel',csv:'text/csv',
+       jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',mp4:'video/mp4',txt:'text/plain'}[file.name.split('.').pop().toLowerCase()]||file.type||'application/octet-stream'),
       'X-File-Name':encodeURIComponent(file.name).slice(0,220),'X-Gaius-Scope':scopeType,'X-Gaius-Unit':scopeId},body:file});}
   catch{throw new AppError('offline',503);}
   const data=await res.json().catch(()=>({error:'serviceError'}));

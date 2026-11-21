@@ -1,0 +1,29 @@
+/* Gaius Nexus 11.2: accessible ministry branding and private document library */
+#auth{min-height:100dvh;max-width:none;display:grid;place-items:center;
+ background:radial-gradient(ellipse at 20% 10%,#1d3a24 0%,transparent 38%),linear-gradient(150deg,#080d0a,#0f1b14 60%,#070907);padding:24px 12px}
+#auth .login{width:min(100%,650px);max-width:650px;margin:0;padding:clamp(15px,3vw,29px);
+ border:1px solid #43674b;background:#fcfefc;box-shadow:0 22px 72px #0007}
+.gaius-login-hero{margin:-2px -2px 16px;background:#000;min-height:170px;
+ border-radius:15px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+ overflow:hidden;text-align:center;border:1px solid #314b35}
+.gaius-login-hero picture{display:block;width:100%;max-width:530px}
+.gaius-login-hero img{display:block;width:100%;height:clamp(130px,26vw,245px);
+ object-fit:contain;object-position:center;background:#000}
+.gaius-login-hero p{font-weight:800;color:#a8cf91;font-size:.85rem;letter-spacing:.08em;margin:-8px 0 11px}
+#auth .login>.top .logo{width:80px;height:44px;border:0;opacity:.95}
+#auth .login h1{font-size:clamp(1.3rem,4vw,1.8rem);color:#1b5135}
+#auth .login input:focus-visible,#auth .login select:focus-visible,
+.v11root input:focus-visible,.v11root button:focus-visible{outline:3px solid #7bc765;outline-offset:2px}
+.v11identity{min-width:0}
+.v11logo{object-fit:contain!important;background:#000;padding:3px;border-color:#396c4c!important}
+.v11filecard{padding:15px;border-left:3px solid #77b95e}
+.v11filecard h3{overflow-wrap:anywhere;font-size:1rem}
+.v11grants{max-height:230px;overflow:auto;border:1px solid #d5e3d7;padding:10px;border-radius:10px}
+.v11grants label{display:flex;align-items:center;gap:9px;padding:7px 4px;font-size:.88rem}
+.v11grants input{width:20px;height:20px;flex:0 0 20px}
+.v11previewImage{width:100%;max-height:65vh;object-fit:contain;margin:12px auto;display:block;background:#0c100d}
+.v11previewFrame{width:100%;min-height:60vh;display:block;border:1px solid #cad7ce;border-radius:10px;margin:12px 0}
+.v11filecard button,.v11FileGrants button{min-height:42px}
+@media(max-width:600px){#auth{padding:9px}#auth .login{border-radius:14px}
+.gaius-login-hero{min-height:150px}.gaius-login-hero img{height:160px}
+.v11logo{width:60px;height:60px}.v11previewFrame{min-height:58vh}}
