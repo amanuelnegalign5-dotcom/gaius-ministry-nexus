@@ -126,25 +126,39 @@ export class MinistryWorkspace {
     const scopeId=request.headers.get('X-Gaius-Unit')||'org';
     if(!canUploadFile(user,scopeType,scopeId))throw new AppError('forbidden',403);
     const type=(request.headers.get('Content-Type')||'').split(';')[0].toLowerCase();
-    const allowed=new Set(['application/pdf','application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'image/jpeg','image/png','image/webp','video/mp4','text/plain']);
+    const allowed=new Map([
+      ['application/pdf',['pdf']],['application/vnd.openxmlformats-officedocument.wordprocessingml.document',['docx']],
+      ['application/vnd.openxmlformats-officedocument.presentationml.presentation',['pptx']],
+      ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',['xlsx']],
+      ['application/msword',['doc']],['application/vnd.ms-powerpoint',['ppt']],
+      ['application/vnd.ms-excel',['xls']],['text/plain',['txt']],
+      ['text/csv',['csv']],['image/jpeg',['jpg','jpeg']],['image/png',['png']],
+      ['image/webp',['webp']],['video/mp4',['mp4']]]);
     if(!allowed.has(type))throw new AppError('fileInvalid',415);
     const name=decodeURIComponent(request.headers.get('X-File-Name')||'upload').replace(/[\/\r\n\0]/g,'').slice(0,180);
     if(!name)throw new AppError('fileInvalid',400);
+    const ext=name.split('.').pop()?.toLowerCase();
+    if(!allowed.get(type)?.includes(ext))throw new AppError('fileInvalid',415);
     if(Number(request.headers.get('Content-Length')||0)>10*1024*1024)throw new AppError('fileTooLarge',413);
     const bytes=await request.arrayBuffer();
     if(bytes.byteLength===0||bytes.byteLength>10*1024*1024)throw new AppError('fileTooLarge',413);
     const first=new Uint8Array(bytes.slice(0,16));
     const starts=(...b)=>b.every((v,i)=>first[i]===v);
     if(type==='application/pdf'&&!starts(37,80,68,70,45))throw new AppError('fileInvalid',415);
-    if(type==='application/vnd.openxmlformats-officedocument.wordprocessingml.document'&&!starts(80,75,3,4))throw new AppError('fileInvalid',415);
+    const zipTypes=['application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+       'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
+    if(zipTypes.includes(type)&&!starts(80,75,3,4))throw new AppError('fileInvalid',415);
+    if(['application/msword','application/vnd.ms-powerpoint','application/vnd.ms-excel'].includes(type)&&
+       !starts(208,207,17,224,161,177,26,225))throw new AppError('fileInvalid',415);
     if(type==='image/png'&&!starts(137,80,78,71))throw new AppError('fileInvalid',415);
     if(type==='image/jpeg'&&!starts(255,216,255))throw new AppError('fileInvalid',415);
     if(type==='image/webp'&&!(starts(82,73,70,70)&&String.fromCharCode(...first.slice(8,12))==='WEBP'))throw new AppError('fileInvalid',415);
     if(type==='video/mp4'&&String.fromCharCode(...first.slice(4,8))!=='ftyp')throw new AppError('fileInvalid',415);
     const id=crypto.randomUUID(),key='private/'+id;
     await this.env.MEDIA_BUCKET.put(key,bytes,{httpMetadata:{contentType:type}});
-    const record={id,key,name,type,size:bytes.byteLength,scopeType,scopeId,ownerId:user.id,status:'pending',createdAt:new Date().toISOString()};
+    const record={id,key,name,type,size:bytes.byteLength,scopeType,scopeId,ownerId:user.id,
+      allowedUserIds:[],status:'pending',createdAt:new Date().toISOString()};
     await this.db.atomic(()=>this.db.put('v11_files',record));
     return json({id,status:'pending'});
   }
