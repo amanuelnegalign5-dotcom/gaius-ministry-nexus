@@ -43,5 +43,5 @@ test('JSON imports are separate from R2 uploads, preserving director-only server
 test('updated iOS launcher invalidates JS and CSS without changing private data',()=>{
  assert.match(html,/gaius-v11-ui\.js\?v=11\.2\.0/);
  assert.match(html,/gaius-v11\.css\?v=11\.2\.0/);
- assert.match(sw,/11\.1\.6-nine-hq-reports/);
+ assert.match(sw,/11\.2\.0-brand-documents/);
 });
