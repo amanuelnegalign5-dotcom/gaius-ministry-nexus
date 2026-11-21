@@ -4,14 +4,31 @@ export const roleDepartments = {
   media_leader:'Media', followup_leader:'Follow-up', service_leader:'Service Coordination',
   counseling_leader:'Counseling and Support', research_leader:'Research and Training', event_leader:'Event',
   admin_finance:'Administration and Finance', monday_leader:'Monday Staff Program',
+  support_leader:'Support Team Department', establishment_leader:'Department of Centers Establishment',
   international_staff:'International', assisting_staff:'', prayer_staff:'Prayer',
   country_director:'', international_director:'',
   center_leader:'',potential_center_leader:'',center_department_leader:'',potential_department_leader:'',volunteer:'',hq_staff:''
 };
 export const directors = ['country_director','international_director'];
-const hqReportingRoles=new Set(['media_leader','followup_leader','service_leader','counseling_leader','research_leader','event_leader','admin_finance']);
-const centerReportingRoles=new Set(['center_leader','center_department_leader']);
-const reporters=[...hqReportingRoles,...centerReportingRoles];
+// Nine approved HQ reporting departments. The associated leader must ALSO be
+// assigned to that HQ department; a center assignment or an arbitrary admin flag
+// cannot confer access to the central HQ reporting portal.
+export const hqDepartmentAliases={
+ admin_finance:['Administration and Finance','admin-finance'],
+ followup_leader:['Follow-up','Follow-up Department','followup'],
+ service_leader:['Service Coordination','Coordination Department','coordination'],
+ counseling_leader:['Counseling and Support','Counseling','counseling'],
+ support_leader:['Support Team Department','Support','support'],
+ establishment_leader:['Department of Centers Establishment','Centers Establishment','establishment'],
+ media_leader:['Media','Media and Public Relation','Media & PR','media-pr'],
+ research_leader:['Research and Training','research'],
+ monday_leader:['Monday Staff Program','Monday Staff','monday-staff']
+};
+const normalizeUnit=v=>String(v??'').trim().toLowerCase();
+const isNineHQDepartment=department=>Object.values(hqDepartmentAliases).some(names=>names.some(n=>normalizeUnit(n)===normalizeUnit(department)));
+export const isHQReporter=u=>!!u&&stateOf(u)==='active'&&!u.center&&
+ Object.prototype.hasOwnProperty.call(hqDepartmentAliases,u.role)&&
+ hqDepartmentAliases[u.role].some(x=>normalizeUnit(x)===normalizeUnit(u.department));
 export const permissions = ['reports','review_reports','review_plans','comments','attendance','announcements','projects','documents','manage_users','v11:oversight','v11:approve','v11:publish','v11:teaching','v11:edit_manual'];
 export const sourceIds = ['event','counseling','research','followup','service','media'];
 export const seedPeople = [
@@ -24,19 +41,19 @@ const own = (o,k) => Object.prototype.hasOwnProperty.call(o,k);
 export const stateOf = u => u?.accountStatus || 'active'; // Existing v10 accounts were admitted at registration.
 export const full = u => !!u && stateOf(u)==='active' && (directors.includes(u.role) || u.fullAdmin===true);
 export const permit = (u,p) => !!u && stateOf(u)==='active' && (full(u) || (u.adminPermissions||[]).includes(p));
-export const seesReports = u => !!u && stateOf(u)==='active' && (full(u)||reporters.includes(u.role));
+export const seesReports = u => !!u && stateOf(u)==='active' &&
+ (directors.includes(u.role)||isHQReporter(u));
 export const writesReports = u => seesReports(u);
-const sameUnit=(a,b)=>!!String(a||'').trim()&&String(a||'').trim().toLowerCase()===String(b||'').trim().toLowerCase();
+const sameUnit=(a,b)=>!!normalizeUnit(a)&&normalizeUnit(a)===normalizeUnit(b);
 function canSeeLegacyItem(u,r,kind){
  if(stateOf(u)!=='active')return false;
- if(full(u))return true;
- if(kind==='report'&&r.original)return false;
- if(u.center){
-  if(kind!=='report'||!centerReportingRoles.has(u.role)||!sameUnit(u.center,r.center))return false;
-  return u.role==='center_leader'||sameUnit(u.department,r.department);
- }
- return hqReportingRoles.has(u.role)&&!!u.department&&sameUnit(u.department,r.department)&&
-   (kind==='plan'||!r.center);
+ if(directors.includes(u.role))return true;
+ if(!isHQReporter(u))return false;
+ // Shared HQ reporting: leaders can see all NINE HQ departments, never a
+ // center report or unrelated staff/personal record. Own drafts remain private.
+ if(r.original)return false;
+ return !r.center&&isNineHQDepartment(r.department)&&
+   (r.userId===u.id||r.submission!=='draft');
 }
 export const managesAttendance = u => permit(u,'attendance') || ['admin_finance','monday_leader'].includes(u?.role);
 export const publishes = u => permit(u,'announcements') || ['admin_finance','monday_leader'].includes(u?.role);
@@ -256,7 +273,7 @@ function reviewedRecord(db,kind,id){
   required(['plan','report'].includes(kind),'unknown');
   return kind==='report'&&sourceIds.includes(id)?{id,original:true}:exists(db.one(reviewKind(kind),id));
 }
-function canWriteItem(u,k){return k==='plan'?full(u)||(hqReportingRoles.has(u.role)&&!!u.department&&!u.center):writesReports(u);}
+function canWriteItem(u,k){return seesReports(u);}
 function canEditItem(u,r,k,review){
   if(r.original)return false;
   return full(u)||(canWriteItem(u,k)&&r.userId===u.id&&['draft','revision_requested'].includes(flow(r,review)));
@@ -281,10 +298,8 @@ function saveItem(db,u,kind,d){
     if(fields.projectId && fields.projectId!==old?.projectId)exists(db.one('projects',fields.projectId));
   }
   if(!full(u)){
-    if(kind==='plan')need(!u.center&&sameUnit(u.department,fields.department),'forbidden');
-    else if(u.center)need(centerReportingRoles.has(u.role)&&sameUnit(u.center,fields.center)&&
-      (u.role==='center_leader'||sameUnit(u.department,fields.department)),'forbidden');
-    else need(hqReportingRoles.has(u.role)&&sameUnit(u.department,fields.department)&&!fields.center,'forbidden');
+    if(kind==='plan')need(isHQReporter(u)&&sameUnit(u.department,fields.department),'forbidden');
+    else need(isHQReporter(u)&&sameUnit(u.department,fields.department)&&!fields.center,'forbidden');
   }
   const time=now(),submission=d.status==='draft'?'draft':'submitted';
   const r={...old,...fields,id:old?.id||crypto.randomUUID(),userId:old?.userId||u.id,submitterName:old?.submitterName||u.name,
@@ -293,7 +308,7 @@ function saveItem(db,u,kind,d){
   put(db,bucket,r);audit(db,u,kind+'.'+(old?'edit':submission),r.id);return {id:r.id};
 }
 function decide(db,u,d){
-  const r=reviewedRecord(db,d.kind,d.id);need(permit(u,d.kind==='report'?'review_reports':'review_plans')&&canSeeLegacyItem(u,r,d.kind));
+  const r=reviewedRecord(db,d.kind,d.id);need(directors.includes(u.role)&&canSeeLegacyItem(u,r,d.kind),'forbidden');
   const key=d.kind+':'+r.id,old=db.one('reviews',key);fresh(r,d.version);fresh(old,d.reviewVersion);
   const current=flow(r,old),state=d.decision;
   required(['under_review','approved','revision_requested','locked'].includes(state),'invalidTransition');
@@ -304,7 +319,7 @@ function decide(db,u,d){
   audit(db,u,d.kind+'.'+state,r.id);return {id:r.id};
 }
 function editComment(db,u,d){
-  need(permit(u,'comments'));const report=reviewedRecord(db,'report',d.reportId);need(canSeeLegacyItem(u,report,'report'),'forbidden');
+  need(directors.includes(u.role),'forbidden');const report=reviewedRecord(db,'report',d.reportId);need(canSeeLegacyItem(u,report,'report'),'forbidden');
   const old=d.id?exists(db.one('comments',d.id)):null;
   if(old){need(old.reportId===report.id&&(full(u)||old.directorId===u.id));fresh(old,d.version);}
   const text=txt(d.text);required(text,'required');
@@ -330,7 +345,7 @@ function editRecord(db,u,bucket,d){
     values={personId,date,status,note,programType,recordedBy:u.id,personName:db.one('users',personId)?.name||seedPeople.find(p=>p.id===personId)?.name||old?.personName};
   }else{
     if(bucket==='announcements')need(publishes(u));
-    if(bucket==='projects')need(full(u)||((hqReportingRoles.has(u.role)||centerReportingRoles.has(u.role))&&permit(u,'projects')),'forbidden');
+    if(bucket==='projects')need(full(u)||(isHQReporter(u)&&permit(u,'projects')),'forbidden');
     if(bucket==='documents')need(permit(u,'documents'));
     if(old)need(full(u)||permit(u,bucket));
     const title=txt(d.title,500);required(title,'titleRequired');
@@ -357,10 +372,10 @@ function visibleState(db,u){
   if(u.onboarding)return {me:privateUser(u),onboarding:true};
   const all=db.all('users'),members=all.filter(x=>stateOf(x)==='active'),admin=permit(u,'manage_users');
   const reviews=db.all('reviews'),reportAccess=seesReports(u),reports=reportAccess?db.all('reports').filter(r=>
-    canSeeLegacyItem(u,r,'report')&&(flow(r)!=='draft'||r.userId===u.id||permit(u,'review_reports'))):[];
+    canSeeLegacyItem(u,r,'report')&&(flow(r)!=='draft'||r.userId===u.id||directors.includes(u.role))):[];
   const plans=db.all('plans').filter(r=>canSeeLegacyItem(u,r,'plan') &&
-    (r.userId===u.id || permit(u,'review_plans') || ['approved','locked'].includes(flow(r,reviews.find(v=>v.id==='plan:'+r.id)))));
-  const reportIds=new Set([...(full(u)?sourceIds:[]),...reports.map(r=>r.id)]),planIds=new Set(plans.map(r=>r.id));
+    (r.userId===u.id || directors.includes(u.role) || ['submitted','under_review','approved','locked'].includes(flow(r,reviews.find(v=>v.id==='plan:'+r.id)))));
+  const reportIds=new Set([...(seesReports(u)?sourceIds:[]),...reports.map(r=>r.id)]),planIds=new Set(plans.map(r=>r.id));
   const visiblePeople=full(u)?members:
     u.center?members.filter(x=>x.id===u.id||x.center===u.center||directors.includes(x.role)):
     u.department?members.filter(x=>x.id===u.id||(!x.center&&x.department===u.department)||directors.includes(x.role)):
@@ -368,7 +383,7 @@ function visibleState(db,u){
   return {me:privateUser(u),directory:visiblePeople.map(directoryUser),former:full(u)?all.filter(x=>stateOf(x)==='removed').map(x=>({id:x.id,name:x.name})):[],
     users:admin?all.filter(x=>full(u)||canManage(u,x)).map(privateUser):[],reports,plans,
     reviews:reviews.filter(r=>r.kind==='plan'?planIds.has(r.itemId):reportIds.has(r.itemId)),
-    comments:reportAccess?db.all('comments').filter(c=>reportIds.has(c.reportId)&&(c.visible===true||permit(u,'comments'))):[],
+    comments:reportAccess?db.all('comments').filter(c=>reportIds.has(c.reportId)&&(c.visible===true||directors.includes(u.role))):[],
     attendance:db.all('attendance').filter(r=>managesAttendance(u)||r.personId===u.id),
     projects:db.all('projects').filter(r=>full(u)||r.createdBy===u.id),announcements:db.all('announcements'),
     documents:permit(u,'documents')?db.all('documents').filter(r=>full(u)||r.ownerId===u.id):[],
