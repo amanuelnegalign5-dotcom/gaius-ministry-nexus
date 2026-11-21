@@ -45,7 +45,9 @@ test('PWA pre-cache refers only to published web assets',()=>{
  for(const [,path] of match[1].matchAll(/'\.\/([^']*)'/g)){
   if(!path||path==='index.html')continue;
   if(path.startsWith('icons/')){
-   assert.ok(workflow.includes('cp icons/*.png')||workflow.includes(path),`Icon not published: ${path}`);
+   if(path.endsWith('.png'))assert.ok(workflow.includes('cp icons/*.png'),`PNG icon not copied: ${path}`);
+   else assert.ok(workflow.includes(path),`Non-PNG icon not copied: ${path}`);
+   assert.ok(existsSync(resolve(root,path)),`PWA asset missing from repository: ${path}`);
   }else{
    assert.ok(published.has(path),`SW install will fail because ${path} was not published`);
   }
