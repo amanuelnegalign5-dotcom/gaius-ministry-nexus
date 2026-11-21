@@ -196,8 +196,41 @@ function filePickerHTML(id,type='json'){
  const help=json?text('ይህ ቅጽ JSON (.json) ብቻ ይቀበላል። Word (.docx) በቀጥታ አትምረጥ፤ በiPhone Files → Downloads ውስጥ የተቀመጠውን JSON ምረጥ።','Only a .json import file works here, not the original Word documents. On iPhone select Browse → Downloads in Files.'):text('ይህ ባህሪ Cloudflare R2 ማከማቻ ይፈልጋል።','This file upload requires Cloudflare R2 storage.');
  return `<div class="v11picker"><label for="${escape(id)}" class="v11pickerLabel">${escape(label)}</label><input class="v11pickerInput" type="file" id="${escape(id)}" accept="${accept}" aria-describedby="${escape(id)}Help ${escape(id)}Status" required><p class="v11pickerStatus" id="${escape(id)}Status" data-file-status="${escape(id)}" role="status" aria-live="polite">${text('ፋይል አልተመረጠም','No file selected')}</p><p class="v11pickerHelp" id="${escape(id)}Help">${escape(help)}</p></div>`;
 }
-function filesScreen(){const files=state.v11.files||[],mediaReady=state.services?.mediaUploads===true;const sc=my().center?'center':my().department?'hq':'organization',id=my().center||my().department||'org';
- frame(`<div class="v11box"><h2>${text('ሰነድ፣ ፎቶ እና ቪዲዮ','Secure document and media uploads')}</h2><p class="v11guide">${mediaReady?text('የተጫኑ ሰነዶች ከመታየታቸው በፊት ማጽደቅ ይፈልጋሉ።','Uploaded documents require review before publication.'):text('Cloudflare R2 ማከማቻ አልተገናኘም። General Upload ለጊዜው ዝግ ነው። የDirector JSON Import በተለየ ገጽ ላይ ይሠራል።','Cloudflare R2 storage is not configured. General uploads are disabled, but Director JSON imports work separately without R2.')}</p><form id="v11Upload">${filePickerHTML('v11File','attachment')}${caps().director?`<label class="v11field"><span>${text('የፋይሉ ሚስጥራዊነት','File access scope')}</span><select id="v11FileScope"><option value="personal">${text('የግል — ለእኔ ብቻ','Personal — owner only')}</option><option value="organization">${text('ለድርጅቱ — ከጸደቀ በኋላ','Organization — after approval')}</option></select></label>`:`<input type="hidden" id="v11FileScope" value="${sc}">`}<input type="hidden" id="v11FileUnit" value="${escape(caps().director?my().id:id)}"><button class="btn" type="submit" ${mediaReady?'':'disabled'}>${text('ለማጽደቅ ጫን','Upload for review')}</button></form></div><div class="v11box"><h2>${text('የተፈቀዱ የእኔ ፋይሎች','Accessible files')} (${files.length})</h2>${files.map(f=>`<article class="v11record"><h3>${escape(f.name)}</h3><p>${statusText(f.status)} · ${(f.size/1024).toFixed(0)} KB · ${scopeLabel(f.scopeType)}</p><div class="v11actions"><button type="button" data-v="download" data-id="${f.id}">${text('አውርድ','Download')}</button>${caps().director||caps().canApprove?`<button type="button" data-v="fileReview" data-id="${f.id}" data-decision="approved">${text('አጽድቅ','Approve')}</button><button type="button" data-v="fileReview" data-id="${f.id}" data-decision="rejected">${text('ውድቅ','Reject')}</button><button type="button" data-v="fileReview" data-id="${f.id}" data-decision="removed">${text('አስወግድ','Remove')}</button>`:''}</div></article>`).join('')||'<p>—</p>'}</div>`);
+function filesScreen(){
+ const files=state.v11.files||[], mediaReady=state.services?.mediaUploads===true;
+ const isAdmin=caps().director;
+ const sc=isAdmin?'organization':(caps().defaultScopeType||'personal');
+ const unit=isAdmin?'org':(caps().defaultScopeId||my().id);
+ const scopeChooser=isAdmin?`<div class="v11fileScope"><label class="v11field"><span>${text('የመዳረሻ ወሰን','Access scope')}</span><select id="v11FileScope"><option value="organization">${text('ድርጅት','Organization')}</option><option value="hq">HQ</option><option value="center">${text('ማዕከል','Center')}</option><option value="personal">${text('የግል','Personal')}</option></select></label><label class="v11field"><span>${text('የHQ ክፍል/ማዕከል ስም','HQ unit or center name')}</span><input id="v11FileUnit" value="org"></label></div>`:
+ `<input type="hidden" id="v11FileScope" value="${escape(sc)}"><input type="hidden" id="v11FileUnit" value="${escape(unit)}">`;
+ const category=`<label class="v11field"><span>${text('ምድብ','Category')}</span><select id="v11FileCategory">${[['general','General'],['manual','Ministry manual'],['report','Report'],['plan','Plan'],['training','Training'],['meeting','Meeting'],['image','Image'],['media','Media']].map(([value,label])=>`<option value="${value}">${label}</option>`).join('')}</select></label>`;
+ const audience=(f)=>{
+  if(!isAdmin)return '';
+  const acl=f.access||{userIds:[],roles:[],shareWithUnit:false,canDownload:true,canPreview:true};
+  const people=(state.directory||[]).filter(u=>u.id!==f.ownerId).slice(0,100);
+  const peopleChecks=people.map(u=>`<label class="v11check"><input type="checkbox" name="accessUser" value="${escape(u.id)}" ${acl.userIds?.includes(u.id)?'checked':''}> ${escape(u.name||u.username||u.id)} · ${escape(u.department||u.center||u.role||'')}</label>`).join('');
+  const roles=[...new Set((state.directory||[]).map(u=>u.role).filter(Boolean))];
+  const roleChecks=roles.map(role=>`<label class="v11check"><input type="checkbox" name="accessRole" value="${escape(role)}" ${acl.roles?.includes(role)?'checked':''}> ${escape(role)}</label>`).join('');
+  return `<details class="v11permission"><summary>${text('የፋይል መዳረሻ አስተዳደር','Manage file permissions')}</summary><form data-file-access="${escape(f.id)}">
+   <label class="v11check"><input type="checkbox" name="accessUnit" ${acl.shareWithUnit?'checked':''}> ${text('ከጸደቀ በኋላ ለራሱ የHQ/ማዕከል ኃላፊዎች','Share within assigned HQ/center after approval')}</label>
+   <label class="v11check"><input type="checkbox" name="accessDownload" ${acl.canDownload!==false?'checked':''}> ${text('ማውረድ ይፈቀድ','Permit download')}</label>
+   <label class="v11check"><input type="checkbox" name="accessPreview" ${acl.canPreview!==false?'checked':''}> ${text('ቅድመ እይታ ይፈቀድ','Permit preview')}</label>
+   <p class="v11muted">${text('በተለየ መለያ የተፈቀዱ ሰዎች','Explicitly allowed people')}</p><div class="v11checklist">${peopleChecks||'—'}</div>
+   <p class="v11muted">${text('በተለየ ሚና የተፈቀዱ','Explicitly allowed roles')}</p><div class="v11checklist">${roleChecks||'—'}</div>
+   <button type="submit" class="btn">${text('ፈቃዶችን አስቀምጥ','Save access permissions')}</button></form></details>`;
+ };
+ const cards=files.map(f=>{
+  const canPreview=/^(image\/(jpeg|png|webp|gif)|application\/pdf)$/.test(f.type)&&f.access?.canPreview!==false;
+  const canDownload=f.access?.canDownload!==false;
+  const actions=`<div class="v11actions">${canPreview?`<button type="button" data-v="previewFile" data-id="${escape(f.id)}">${text('ቅድመ እይታ','Preview')}</button>`:''}${canDownload?`<button type="button" data-v="download" data-id="${escape(f.id)}">${text('አውርድ','Download')}</button>`:''}
+   ${isAdmin?`<button type="button" data-v="fileReview" data-id="${escape(f.id)}" data-decision="approved">${text('አጽድቅ','Approve')}</button><button type="button" data-v="fileReview" data-id="${escape(f.id)}" data-decision="rejected">${text('ውድቅ','Reject')}</button><button type="button" data-v="fileReview" data-id="${escape(f.id)}" data-decision="removed">${text('አስወግድ','Remove')}</button>`:''}</div>`;
+  return `<article class="v11record"><h3>${escape(f.name)}</h3><p class="v11muted">${escape(f.description||'')}</p><p>${statusText(f.status)} · ${Math.ceil(f.size/1024)} KB · ${scopeLabel(f.scopeType)} · ${escape(f.category||'general')}</p>${actions}${audience(f)}</article>`;
+ }).join('');
+ frame(`<div class="v11box"><h2>${text('የግልና የድርጅት ሰነዶች','Secure document library')}</h2>
+ <p class="v11guide">${mediaReady?text('PDF፣ Word፣ PowerPoint፣ Excel፣ ምስሎች፣ TXT፣ CSV እና ZIP እስከ 10 MB። የተጫኑ ፋይሎች እስኪጸድቁና ፈቃድ እስኪሰጥ ድረስ የተጠበቁ ናቸው።','PDF, Word, PowerPoint, Excel, images, TXT, CSV and ZIP up to 10 MB. New files are private until approved and explicitly shared.'):text('Cloudflare R2 አልተገናኘም። ፋይሎችን ለመጫን MEDIA_BUCKET ማዋቀር አለበት።','Cloudflare R2 is not connected. Bind MEDIA_BUCKET to enable secure uploads.')}</p>
+ <form id="v11Upload">${filePickerHTML('v11File','attachment')}${scopeChooser}${category}<label class="v11field"><span>${text('መግለጫ','Description')}</span><textarea id="v11FileDescription" maxlength="400"></textarea></label>
+ <button type="submit" class="btn" ${mediaReady?'':'disabled'}>${text('በደህንነት ጫን','Secure upload')}</button><p id="v11UploadStatus" role="status" aria-live="polite"></p></form></div>
+ <div class="v11box"><h2>${text('የማየት ፈቃድ ያለህ ፋይሎች','Files you are authorized to access')} (${files.length})</h2>${cards||'<p>—</p>'}</div>`);
 }
 const DBNAME='gaius-v11-local-drafts', STORE='drafts';
 function draftDb(){return new Promise((resolve,reject)=>{const r=indexedDB.open(DBNAME,1);r.onupgradeneeded=()=>r.result.createObjectStore(STORE,{keyPath:'id'});r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});}
