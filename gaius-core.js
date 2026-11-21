@@ -38,7 +38,14 @@ function canSeeLegacyItem(u,r,kind){
  return !r.center&&isNineHQDepartment(r.department)&&
    (r.userId===u.id||r.submission==='submitted'||['submitted','delayed','approved','locked'].includes(r.status));
 }
-export const managesAttendance = u => permit(u,'attendance') || ['admin_finance','monday_leader'].includes(u?.role);
+// Monday is for HQ/directors/staff only; never the center roster.
+const CENTER_ATTENDANCE_ROLES=new Set(['center_leader','potential_center_leader','center_department_leader','potential_department_leader','volunteer']);
+export const mondayMember=u=>!!u&&stateOf(u)==='active'&&!u.center&&
+ !CENTER_ATTENDANCE_ROLES.has(u.role)&&
+ (directors.includes(u.role)||isHQReporter(u)||
+ ['event_leader','hq_staff','international_staff','assisting_staff','prayer_staff','staff'].includes(u.role));
+export const managesAttendance=u=>mondayMember(u)&&
+ (full(u)||permit(u,'attendance')||['admin_finance','monday_leader'].includes(u.role));
 export const publishes = u => permit(u,'announcements') || ['admin_finance','monday_leader'].includes(u?.role);
 export const now = () => new Date().toISOString();
 export const version = r => Number(r?._v||0);
@@ -322,6 +329,8 @@ function editRecord(db,u,bucket,d){
   if(bucket==='attendance'){
     need(managesAttendance(u)); const {personId,date,status,note,programType}=strings(d,['personId','date','status','note','programType']);
     required(personKnown(db,personId)||old?.personId===personId,'required');
+     const participant=db.one('users',personId);
+     need(participant?mondayMember(participant):seedPeople.some(p=>p.id===personId),'forbidden');
     required(/^\d{4}-\d\d-\d\d$/.test(date)&&['present','absent','permitted','late'].includes(status)&&['regular','special','event'].includes(programType));
     const same=db.all(bucket).findLast(r=>r.id!==old?.id && r.date===date && r.personId===personId && (r.programType||'regular')===programType);
     if(same && (!old || !(old.date===date && old.personId===personId && (old.programType||'regular')===programType)))throw new AppError('attendanceExists',409);
@@ -367,7 +376,11 @@ function visibleState(db,u){
     users:admin?all.filter(x=>full(u)||canManage(u,x)).map(privateUser):[],reports,plans,
     reviews:reviews.filter(r=>r.kind==='plan'?planIds.has(r.itemId):reportIds.has(r.itemId)),
     comments:reportAccess?db.all('comments').filter(c=>reportIds.has(c.reportId)&&(c.visible===true||directors.includes(u.role))):[],
-    attendance:db.all('attendance').filter(r=>managesAttendance(u)||r.personId===u.id),
+    attendance:mondayMember(u)?db.all('attendance').filter(r=>{
+       const participant=db.one('users',r.personId);
+       return (participant?mondayMember(participant):seedPeople.some(p=>p.id===r.personId))&&
+         (managesAttendance(u)||r.personId===u.id);
+     }):[],
     projects:db.all('projects').filter(r=>full(u)||r.createdBy===u.id),announcements:db.all('announcements'),
     documents:permit(u,'documents')?db.all('documents').filter(r=>full(u)||r.ownerId===u.id):[],
     audit:full(u)?db.all('audit').slice(-100).reverse():[],...v11State(db,u)};
