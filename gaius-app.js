@@ -197,15 +197,15 @@ for(const line of words){const [k,am,en]=line.split('|');extras[k]={am,en};}
 const roleText={
  media_leader:['የሚዲያ ክፍል ኃላፊ','Media Department Leader'],followup_leader:['የክትትል ክፍል ኃላፊ','Follow-up Department Leader'],
  service_leader:['የአገልግሎት ቅንጅት ኃላፊ','Service Coordination Department Leader'],counseling_leader:['የምክርና ድጋፍ ክፍል ኃላፊ','Counseling and Support Department Leader'],
- research_leader:['የምርምርና ሥልጠና ኃላፊ','Research and Training Department Leader'],event_leader:['የዝግጅት ክፍል ኃላፊ','Event Department Leader'],
- admin_finance:['የአስተዳደርና ፋይናንስ ሠራተኛ','Administrative and Finance Staff'],monday_leader:['የሰኞ ፕሮግራም ኃላፊ','Monday Staff Program Leader'],
+ research_leader:['የምርምርና ሥልጠና ኃላፊ','Research and Training Department Leader'],support_leader:['የድጋፍ ክፍል ኃላፊ','Support Department Leader'],establishment_leader:['የማዕከላት ምሥረታ ክፍል ኃላፊ','Centers Establishment Department Leader'],event_leader:['የዝግጅት ክፍል ኃላፊ','Event Department Leader'],
+ admin_finance:['የአስተዳደርና ፋይናንስ ክፍል ኃላፊ','Administration and Finance HQ Leader'],monday_leader:['የሰኞ ፕሮግራም ኃላፊ','Monday Staff Program Leader'],
  country_director:['የሀገር ውስጥ ዳይሬክተር','Country Director'],international_director:['ዓለም አቀፍ ዳይሬክተር','International Director'],
  international_staff:['ዓለም አቀፍ ሠራተኛ','International Staff'],assisting_staff:['ረዳት ሠራተኛ','Assisting Staff'],prayer_staff:['የጸሎት አገልጋይ','Prayer Staff'],staff:['ሠራተኛ','Staff'],
  center_leader:['የማዕከል መሪ','Center Leader'], potential_center_leader:['እጩ የማዕከል መሪ','Potential Center Leader'],
  center_department_leader:['የማዕከል ክፍል መሪ','Center Department Leader'],potential_department_leader:['እጩ የክፍል መሪ','Potential Department Leader'],
  volunteer:['በጎ ፈቃደኛ','Volunteer'],hq_staff:['የHQ ሠራተኛ','HQ Staff']
 };
-const departments={'Media':'ሚዲያ','Follow-up':'ክትትል','Service Coordination':'የአገልግሎት ቅንጅት','Counseling and Support':'ምክርና ድጋፍ','Research and Training':'ምርምርና ሥልጠና','Event':'ዝግጅት','Administration and Finance':'አስተዳደርና ፋይናንስ','Monday Staff Program':'የሰኞ ፕሮግራም','International':'ዓለም አቀፍ','Prayer':'ጸሎት'};
+const departments={'Media':'ሚዲያ','Follow-up':'ክትትል','Service Coordination':'የአገልግሎት ቅንጅት','Counseling and Support':'ምክርና ድጋፍ','Research and Training':'ምርምርና ሥልጠና','Event':'ዝግጅት','Administration and Finance':'አስተዳደርና ፋይናንስ','Monday Staff Program':'የሰኞ ሠራተኞች ፕሮግራም','Support Team Department':'የድጋፍ ክፍል','Department of Centers Establishment':'የማዕከላት ምሥረታ ክፍል','International':'ዓለም አቀፍ','Prayer':'ጸሎት'};
 let lang=localStorage.gLang==='en'?'en':'am', mode='login', bootstrap=false, emailRecovery=false, view=null, tab='dashboard', editReport=null, editPlan=null, editProfile=null;
 const edits={},busy=new Set();
 const t=k=>extras[k]?.[lang]??base.translations[lang][k]??k;
@@ -365,7 +365,7 @@ for(const id of ['langApp','langAuth'])$(id).onchange=()=>{lang=val(id);translat
 
 
 const source=base.originals.map(r=>({...r,month:'2026-10',submittedAt:'2026-11-01T09:00:00Z',department:r.enTitle,original:true}));
-const reports=()=>seesReports(current())?[...(full(current())?source:[]),...view.reports]:[];
+const reports=()=>seesReports(current())?[...source,...view.reports]:[];
 const reviewOf=(kind,id)=>view.reviews.find(r=>r.id===kind+':'+id);
 const memberName=id=>[...view.directory,...seedPeople,...view.former].find(p=>p.id===id)?.name||id||'—';
 const listFor=kind=>kind==='plan'?view.plans:reports();
@@ -419,7 +419,7 @@ function reviewBlock(kind,r){
  const v=reviewOf(kind,r.id),state=flow(r,v);
  let html='';
  if(v?.recordVersion===version(r))html+=`<div class="muted">${h(v.byName)} · ${h(dateTime(v.at))}${v.note?' · '+h(v.note):''}</div>`;
- if(permit(current(),kind==='report'?'review_reports':'review_plans')&&state!=='draft'){
+ if(directors.includes(current()?.role)&&state!=='draft'){
   const actions=[['approved','approve'],['revision_requested','returnReview'],['under_review','startReview']];
   if(state==='approved')actions.push(['locked','lock']);
   html+=`<details class="reviewControls"><summary>${h(t('reviews'))}</summary><label>${h(t('reviewNote'))}<textarea data-review-note rows="2"></textarea></label><div class="actions">${actions.filter(([s])=>s!==state).map(([s,label])=>button('review',label,{decision:s},s==='approved'?'btn':'btn ghost')).join('')}</div></details>`;
