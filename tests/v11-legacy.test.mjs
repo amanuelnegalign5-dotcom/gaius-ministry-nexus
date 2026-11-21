@@ -25,7 +25,7 @@ test('both director roles share bootstrap validation, third claim is refused',as
  await assert.rejects(()=>register(d,'country_director','Imposter'),e=>e.message==='directorSlotTaken');
  await assert.rejects(()=>handle(d,'register',{username:'malicious',password:'GoodPassword9',role:'international_director',name:'Malicious',phone:'123',email:'m@example.com',accepted:p},{bootstrapAuthorized:false}),e=>e.message==='setupKey');
 });
-test('v11 record draft, submitted, reviewed and department isolation',async()=>{
+test('v11 record drafts private, submitted HQ reports shared among nine leaders',async()=>{
  const db=new MemoryDB();await register(db,'country_director','Country');
  await register(db,'followup_leader','Followup');await register(db,'media_leader','Media');
  const boss=await login(db,'Country');
@@ -34,9 +34,11 @@ test('v11 record draft, submitted, reviewed and department isolation',async()=>{
  const token=await login(db,'Followup');
  const saved=await cmd(db,token,'v11.save',{kind:'monthly',scopeType:'hq',scopeId:'Follow-up',data:{title:'Weekly review',month:'2026-11',activity:'Support',result:'Completed'}});
  let v=(await state(db,token)).v11.records.find(x=>x.id===saved.id);assert.equal(v.status,'draft');
+ const mediaToken=await login(db,'Media');
+ assert.equal((await state(db,mediaToken)).v11.records.some(x=>x.id===saved.id),false);
  await cmd(db,token,'v11.transition',{id:saved.id,version:v._v,decision:'submit'});
  v=(await state(db,boss)).v11.records.find(x=>x.id===saved.id);assert.equal(v.status,'submitted');
- const mediaToken=await login(db,'Media');assert.equal((await state(db,mediaToken)).v11.records.some(x=>x.id===saved.id),false);
+ assert.equal((await state(db,mediaToken)).v11.records.some(x=>x.id===saved.id),true);
  await assert.rejects(()=>cmd(db,mediaToken,'v11.transition',{id:saved.id,version:v._v,decision:'approve'}),e=>e.message==='forbidden');
  await cmd(db,boss,'v11.transition',{id:saved.id,version:v._v,decision:'approve'});
  assert.equal((await state(db,token)).v11.records.find(x=>x.id===saved.id).status,'approved');
