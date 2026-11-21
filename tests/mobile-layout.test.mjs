@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {checkReleaseAssets} from './release-consistency.mjs';
 import {readFileSync} from 'node:fs';
 const nexus=readFileSync(new URL('../gaius-v11-ui.js',import.meta.url),'utf8');
 const css=readFileSync(new URL('../gaius-v11.css',import.meta.url),'utf8');
@@ -30,8 +31,6 @@ test('mobile layout eliminates double-sticky navigation and preserves logout con
  assert.match(css,/#app\.nexus-mode \.bar \.actions/);
 });
 test('PWA cache and static asset versions invalidate old iPhone interface',()=>{
- assert.match(sw,/11\.2\.0-brand-documents/);
- assert.match(html,/gaius-v11\.css\?v=11\.2\.0/);
- assert.match(html,/gaius-v11-ui\.js\?v=11\.2\.0/);
- assert.match(html,/gaius-app\.js\?v=11\.1\.6/);
+ const release=checkReleaseAssets();
+ assert.ok(release.version);
 });
