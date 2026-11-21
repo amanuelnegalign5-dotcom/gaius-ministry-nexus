@@ -157,3 +157,17 @@ test('two separately named meetings on the same date are allowed, but duplicate 
  assert.notEqual(a.id,b.id);
  await assert.rejects(issue(db,'v11.save',payload,t.Gerji),e=>e?.message==='attendanceExists');
 });
+
+test('a center-assigned delegated Full Admin cannot read or create another center plan/report',async()=>{
+ const {db,t,id}=await fixture();
+ const other=await issue(db,'v11.save',{kind:'monthly',scopeType:'center',scopeId:'Mekanisa',data:report('Mekanisa private')},t.Mekanisa);
+ const same=await issue(db,'v11.save',{kind:'monthly',scopeType:'center',scopeId:'Gerji',data:report('Gerji private')},t.Arts);
+ const user=db.one('users',id('Arts'));
+ db.put('users',{...user,fullAdmin:true,adminPermissions:['v11:oversight']});
+ const state=await snapshot(db,t.Arts);
+ assert.equal(state.v11.capabilities.defaultScopeType,'center');
+ assert.equal(state.v11.capabilities.director,false);
+ assert.equal(state.v11.records.some(x=>x.id===other.id),false);
+ assert.equal(state.v11.records.some(x=>x.id===same.id),true);
+ await assert.rejects(issue(db,'v11.save',{kind:'monthly',scopeType:'center',scopeId:'Mekanisa',data:report('Cross-center forgery')},t.Arts),expectsForbidden);
+});
