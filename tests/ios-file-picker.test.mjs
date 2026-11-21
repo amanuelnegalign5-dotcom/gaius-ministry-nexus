@@ -41,7 +41,7 @@ test('JSON imports are separate from R2 uploads, preserving director-only server
  assert.match(backend,/check\(active\(u\)&&u\.role==='country_director','forbidden'\)/);
 });
 test('updated iOS launcher invalidates JS and CSS without changing private data',()=>{
- assert.match(html,/gaius-v11-ui\.js\?v=11\.1\.5/);
+ assert.match(html,/gaius-v11-ui\.js\?v=11\.1\.6/);
  assert.match(html,/gaius-v11\.css\?v=11\.1\.5/);
- assert.match(sw,/11\.1\.5-file-picker/);
+ assert.match(sw,/11\.1\.6-nine-hq-reports/);
 });
