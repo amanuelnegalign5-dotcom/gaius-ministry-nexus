@@ -4,7 +4,8 @@ import {isHQReporter,isDirectorRole,isNineHQDepartment} from './gaius-report-pol
 const clean=(x,n=9000)=>String(x??'').trim().slice(0,n);
 const isDirector=u=>['country_director','international_director'].includes(u?.role)||u?.fullAdmin===true;
 const granted=(u,p)=>isDirector(u)||(u?.adminPermissions||[]).includes(p);
-const active=u=>u&&u.accountStatus!=='removed'&&u.accountStatus!=='pending';
+// Legacy accounts without a status are admitted; unknown future states are not.
+const active=u=>!!u&&(u.accountStatus??'active')==='active';
 const fail=(code,status=403)=>{const e=new Error(code);e.status=status;throw e;};
 const check=(condition,code='forbidden',status=403)=>{if(!condition)fail(code,status);};
 const at=()=>new Date().toISOString();
@@ -242,6 +243,9 @@ function completeVisit(db,u,p){
 function filePermissions(db,u,p){
  check(active(u)&&isDirector(u),'forbidden');
  const f=db.one('v11_files',clean(p?.id,100));check(f&&f.status!=='removed','missing',404);
+ // Personal-file grants are owner-controlled. Organization-wide Directors and
+ // delegated Full Admins must not add themselves to another person's private file.
+ if(f.scopeType==='personal')check(f.ownerId===u.id,'forbidden');
  check(Array.isArray(p?.allowedUserIds)&&p.allowedUserIds.length<=100,'invalidRecipients',400);
  const ids=[...new Set(p.allowedUserIds.map(id=>clean(id,100)))];
  check(ids.every(id=>db.one('users',id)&&active(db.one('users',id))),'invalidRecipients',400);
@@ -268,12 +272,15 @@ export function v11State(db,u){
   files:db.all('v11_files').filter(f=>canReadFile(u,f)).map(f=>({id:f.id,name:f.name,type:f.type,size:f.size,scopeType:f.scopeType,scopeId:f.scopeId,ownerId:f.ownerId,status:f.status,createdAt:f.createdAt,...(isDirector(u)?{allowedUserIds:f.allowedUserIds||[]}:{} )}))}};
 }
 export function canReadFile(u,f){
- if(!active(u)||f.status==='removed')return false;
- if(isDirector(u))return true;
+ if(!active(u)||!f||f.status==='removed')return false;
  if(f.ownerId===u.id)return true;
+ // A personal upload is not an organization document. No Director or Full Admin
+ // gets implicit read access. The owner may explicitly share an approved item.
+ if(f.scopeType==='personal')return f.status==='approved'&&
+   (f.allowedUserIds||[]).includes(u.id);
+ if(isDirector(u))return true;
  if(f.status!=='approved')return false;
  if((f.allowedUserIds||[]).includes(u.id))return true;
- if(f.scopeType==='personal')return false;
  if(f.scopeType==='center')return centerMember(u)&&sameUnit(u.center,f.scopeId)&&
    (f.ownerId===u.id||(u.role==='center_leader'&&f.status==='approved'));
  if(f.scopeType==='hq')return hqLeader(u)&&sameUnit(u.department,f.scopeId);
