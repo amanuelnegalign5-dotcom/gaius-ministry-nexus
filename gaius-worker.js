@@ -1,3 +1,4 @@
+import {validateGaiusUpload} from './gaius-upload-types.js';
 // Optional shared service. Wrangler bundles this module with gaius-core.js.
 import { AppError, digest, handle, authenticatedUser } from './gaius-core.js';
 import {canReadFile,canUploadFile,canDownloadFile,canPreviewFile} from './gaius-v11-core.js';
@@ -51,6 +52,15 @@ export class MinistryWorkspace {
       let data;try{data=JSON.parse(raw||'{}');}catch{throw new AppError('unknown',400);}
       if(!data||Array.isArray(data)||typeof data!=='object')throw new AppError('unknown',400);
       const token=(request.headers.get('Authorization')||'').replace(/^Bearer /,'');
+      // Validate names, sizes and content types of advertised R2 uploads.
+      // This does not replace per-user scope checks in the document service.
+      if(/(?:file|upload)/i.test(route)&&/(?:init|request|upload)/i.test(route)){
+       const m=data?.file||data||{},name=m.name||m.fileName||m.filename;
+       const size=Number(m.size??m.fileSize);
+       if(name&&Number.isSafeInteger(size)&&size>0)validateGaiusUpload({
+        name,size,type:m.type||m.contentType||m.mimeType||''
+       });
+      }
       if(route==='info')return json({...(await handle(this.db,route,data,{token})),emailRecovery:recoveryReady(this.env)});
       if(route==='login' && typeof data.username==='string')
         this.db.limit('login-user:'+await digest(data.username.trim().toLowerCase()),20,600000);
