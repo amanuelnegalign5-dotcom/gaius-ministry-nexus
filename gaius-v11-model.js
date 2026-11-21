@@ -108,4 +108,11 @@ V11_KINDS.visits={am:'የማዕከላት ጉብኝት',en:'Center visits',person
  ['due','የክትትል ቀን','Follow-up due','date'],['nextVisit','ቀጣይ ጉብኝት','Next visit','date'],
  ['evidence','የፎቶ/ሰነድ ማጣቀሻ','Evidence reference','text']
 ]};
+// Shared center planning identifies a department without changing the center
+// scope. Attendance is separate from Monday staff attendance records.
+V11_KINDS.plans6.fields.push(['departmentType','የማዕከል ክፍል','Center department','text']);
+V11_KINDS.centerAttendance.fields.push(
+ ['meetingName','የሌላ ስብሰባ ስም','Other meeting name','text'],
+ ['departmentType','የመሪው ክፍል','Participant department','text']
+);
 export const V11_KINDS_LIST=Object.keys(V11_KINDS);
