@@ -823,6 +823,7 @@ function associateLabels(){
  for(const [id,key] of [['search','search'],['monthFilter','month'],['langAuth','languages'],['langApp','languages']])$(id).setAttribute('aria-label',t(key));
 }
 async function start(){
+ window.GAIUS_LOGIN_READY=true;
  translate();setMode('login');associateLabels();requiredCenterInput();
  try{await info();if(store.hasSession())await refresh();}
  catch(e){
