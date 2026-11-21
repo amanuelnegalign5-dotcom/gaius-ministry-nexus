@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {checkReleaseAssets} from './release-consistency.mjs';
 import {readFileSync} from 'node:fs';
 const app=readFileSync(new URL('../gaius-app.js',import.meta.url),'utf8');
 const nexus=readFileSync(new URL('../gaius-v11-ui.js',import.meta.url),'utf8');
@@ -26,7 +27,6 @@ test('signout hides director workspace and clears protected records',()=>{
  assert.match(nexus,/root\.replaceChildren\(\);state=null;autoOpenedDirectorId=null/);
 });
 test('PWA release invalidates old cached UI modules',()=>{
- assert.match(html,/gaius-app\.js\?v=11\.1\.6/);
- assert.match(html,/gaius-v11-ui\.js\?v=11\.2\.0/);
- assert.match(worker,/11\.2\.0-brand-documents/);
+ const {version,cache}=checkReleaseAssets();
+ assert.ok(cache.startsWith(version+'-'));
 });

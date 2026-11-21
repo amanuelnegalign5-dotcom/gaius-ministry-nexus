@@ -26,5 +26,5 @@ GitHub Pages የApp ማሳያውን ብቻ ያስተናግዳል። የድርጅ
 5. User በነባር HQ/Center Scope ወይም በግልጽ የAdmin ፈቃድ መሠረት ይመለከታል። የHQ ሪፖርት መዳረሻን አይቀይርም።
 6. PDF እና ምስሎች በApp ውስጥ Preview አላቸው። Word/PPT/Excel ከመሣሪያው በሚደገፍ ፕሮግራም ይከፈታሉ።
 
-## ለLogin ሎጎ
-`icons/gaius-login.png` ውስጥ ከተጠቃሚው የተሰጠ ጥቁር ጀርባ ያለው የGAIUS ሎጎ በትንሽ የድር ፋይል መጠን ተቀምጧል። በLogin ገጽ ላይ ያ ይታያል፣ በApp ውስጥ ደግሞ የቀድሞው የApp Icon የምስል ፋይል (`icons/official-logo.jpg`) ይታያል።
+## ለLogin ሎጎ — v11.2.1
+በተጠቃሚው ጥያቄ መሠረት ሰፊው ጥቁር የLogin ምስል ተወግዷል። በቀድሞው ትንሽ የLogin ሎጎ ቦታ ላይ ኦፊሴላዊው ነጭ ጀርባ ያለው `icons/official-logo.jpg` ነው የሚታየው። ይህ ምስል በGaius Nexus ውስጥም ይታያል። `icons/gaius-login.png` የነበረው አሮጌ ጥቁር ምስል ከRepository እና ከService Worker pre-cache ተወግዷል።

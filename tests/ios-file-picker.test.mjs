@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {checkReleaseAssets} from './release-consistency.mjs';
 import {readFileSync} from 'node:fs';
 
 const ui=readFileSync(new URL('../gaius-v11-ui.js',import.meta.url),'utf8');
@@ -41,7 +42,6 @@ test('JSON imports are separate from R2 uploads, preserving director-only server
  assert.match(backend,/check\(active\(u\)&&u\.role==='country_director','forbidden'\)/);
 });
 test('updated iOS launcher invalidates JS and CSS without changing private data',()=>{
- assert.match(html,/gaius-v11-ui\.js\?v=11\.2\.0/);
- assert.match(html,/gaius-v11\.css\?v=11\.2\.0/);
- assert.match(sw,/11\.2\.0-brand-documents/);
+ const release=checkReleaseAssets();
+ assert.ok(release.cache.includes(release.version));
 });
