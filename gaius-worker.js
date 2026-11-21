@@ -1,6 +1,7 @@
 // Optional shared service. Wrangler bundles this module with gaius-core.js.
 import { AppError, digest, handle, authenticatedUser } from './gaius-core.js';
-import {canReadFile,canUploadFile} from './gaius-v11-core.js';
+import {canReadFile,canUploadFile,canDownloadFile,canPreviewFile} from './gaius-v11-core.js';
+import {fileTypeFor,matchesFileSignature,MAX_FILE_BYTES} from './gaius-file-types.js';
 import { RecoveryService, recoveryReady } from './gaius-recovery.js';
 
 class SqlRecords {
@@ -125,26 +126,27 @@ export class MinistryWorkspace {
     const scopeType=request.headers.get('X-Gaius-Scope')||'organization';
     const scopeId=request.headers.get('X-Gaius-Unit')||'org';
     if(!canUploadFile(user,scopeType,scopeId))throw new AppError('forbidden',403);
-    const type=(request.headers.get('Content-Type')||'').split(';')[0].toLowerCase();
-    const allowed=new Set(['application/pdf','application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'image/jpeg','image/png','image/webp','video/mp4','text/plain']);
-    if(!allowed.has(type))throw new AppError('fileInvalid',415);
-    const name=decodeURIComponent(request.headers.get('X-File-Name')||'upload').replace(/[\/\r\n\0]/g,'').slice(0,180);
-    if(!name)throw new AppError('fileInvalid',400);
-    if(Number(request.headers.get('Content-Length')||0)>10*1024*1024)throw new AppError('fileTooLarge',413);
+    let name;
+    try{name=decodeURIComponent(request.headers.get('X-File-Name')||'upload');}
+    catch{throw new AppError('fileInvalid',400);}
+    name=name.replace(/[\\/\r\n\0]/g,'').slice(0,160);
+    if(!name||name.startsWith('.'))throw new AppError('fileInvalid',400);
+    const classification=fileTypeFor(name,request.headers.get('Content-Type')||'');
+    if(!classification)throw new AppError('fileInvalid',415);
+    if(Number(request.headers.get('Content-Length')||0)>MAX_FILE_BYTES)throw new AppError('fileTooLarge',413);
     const bytes=await request.arrayBuffer();
-    if(bytes.byteLength===0||bytes.byteLength>10*1024*1024)throw new AppError('fileTooLarge',413);
-    const first=new Uint8Array(bytes.slice(0,16));
-    const starts=(...b)=>b.every((v,i)=>first[i]===v);
-    if(type==='application/pdf'&&!starts(37,80,68,70,45))throw new AppError('fileInvalid',415);
-    if(type==='application/vnd.openxmlformats-officedocument.wordprocessingml.document'&&!starts(80,75,3,4))throw new AppError('fileInvalid',415);
-    if(type==='image/png'&&!starts(137,80,78,71))throw new AppError('fileInvalid',415);
-    if(type==='image/jpeg'&&!starts(255,216,255))throw new AppError('fileInvalid',415);
-    if(type==='image/webp'&&!(starts(82,73,70,70)&&String.fromCharCode(...first.slice(8,12))==='WEBP'))throw new AppError('fileInvalid',415);
-    if(type==='video/mp4'&&String.fromCharCode(...first.slice(4,8))!=='ftyp')throw new AppError('fileInvalid',415);
+    if(bytes.byteLength===0||bytes.byteLength>MAX_FILE_BYTES)throw new AppError('fileTooLarge',413);
+    if(!matchesFileSignature(new Uint8Array(bytes.slice(0,128)),classification.magic))throw new AppError('fileInvalid',415);
+    const type=classification.mime;
+    let description='';
+    try{description=decodeURIComponent(request.headers.get('X-Gaius-Description')||'').slice(0,400);}
+    catch{throw new AppError('fileInvalid',400);}
+    const category=String(request.headers.get('X-Gaius-Category')||'general').toLowerCase().slice(0,32);
+    if(!['general','manual','report','plan','training','meeting','image','media'].includes(category))
+      throw new AppError('fileInvalid',400);
     const id=crypto.randomUUID(),key='private/'+id;
     await this.env.MEDIA_BUCKET.put(key,bytes,{httpMetadata:{contentType:type}});
-    const record={id,key,name,type,size:bytes.byteLength,scopeType,scopeId,ownerId:user.id,status:'pending',createdAt:new Date().toISOString()};
+    const record={id,key,name,type,size:bytes.byteLength,description,category,scopeType,scopeId,ownerId:user.id,status:'pending',access:{userIds:[],roles:[],shareWithUnit:false,canDownload:true,canPreview:true},createdAt:new Date().toISOString()};
     await this.db.atomic(()=>this.db.put('v11_files',record));
     return json({id,status:'pending'});
   }
@@ -156,10 +158,10 @@ export class MinistryWorkspace {
     let data;try{data=await request.json();}catch{throw new AppError('unknown',400);}
     const file=this.db.one('v11_files',String(data.id||''));
     if(!file)throw new AppError('missing',404);
-    if(!canReadFile(user,file))throw new AppError('forbidden',403);
+    if(data.preview? !canPreviewFile(user,file):!canDownloadFile(user,file))throw new AppError('forbidden',403);
     const result=await this.env.MEDIA_BUCKET.get(file.key);
     if(!result)throw new AppError('missing',404);
-    return new Response(result.body,{headers:{'Content-Type':file.type,'Content-Disposition':"attachment; filename*=UTF-8''"+encodeURIComponent(file.name),
+    return new Response(result.body,{headers:{'Content-Type':file.type,'Content-Disposition':(data.preview&&/^(image\/(png|jpeg|webp|gif)|application\/pdf)$/.test(file.type)?'inline':'attachment')+"; filename*=UTF-8''"+encodeURIComponent(file.name),
       'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});
   }
 }
@@ -167,7 +169,7 @@ export default {
   async fetch(request,env){
     const origin=request.headers.get('Origin'),allowed=env.ALLOWED_ORIGIN;
     if(!allowed||origin!==allowed)return json({error:'originDenied'},403);
-    const cors={'Access-Control-Allow-Origin':allowed,'Access-Control-Allow-Methods':'POST, OPTIONS','Access-Control-Allow-Headers':'Authorization, Content-Type, X-File-Name, X-Gaius-Scope, X-Gaius-Unit','Vary':'Origin'};
+    const cors={'Access-Control-Allow-Origin':allowed,'Access-Control-Allow-Methods':'POST, OPTIONS','Access-Control-Allow-Headers':'Authorization, Content-Type, X-File-Name, X-Gaius-Scope, X-Gaius-Unit, X-Gaius-Description, X-Gaius-Category','Vary':'Origin'};
     if(request.method==='OPTIONS')return new Response(null,{status:204,headers:cors});
     const room=env.WORKSPACE.get(env.WORKSPACE.idFromName('gaius-ministry-v10'));
     const response=await room.fetch(request);
