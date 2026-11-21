@@ -1,5 +1,6 @@
 // Shared domain rules for the v10 workspace, updated to v11.
 import {v11Command,v11State,approveFile} from './gaius-v11-core.js';
+import {isHQReporter,isNineHQDepartment,isDirectorRole} from './gaius-report-policy.js';
 export const roleDepartments = {
   media_leader:'Media', followup_leader:'Follow-up', service_leader:'Service Coordination',
   counseling_leader:'Counseling and Support', research_leader:'Research and Training', event_leader:'Event',
@@ -10,25 +11,6 @@ export const roleDepartments = {
   center_leader:'',potential_center_leader:'',center_department_leader:'',potential_department_leader:'',volunteer:'',hq_staff:''
 };
 export const directors = ['country_director','international_director'];
-// Nine approved HQ reporting departments. The associated leader must ALSO be
-// assigned to that HQ department; a center assignment or an arbitrary admin flag
-// cannot confer access to the central HQ reporting portal.
-export const hqDepartmentAliases={
- admin_finance:['Administration and Finance','admin-finance'],
- followup_leader:['Follow-up','Follow-up Department','followup'],
- service_leader:['Service Coordination','Coordination Department','coordination'],
- counseling_leader:['Counseling and Support','Counseling','counseling'],
- support_leader:['Support Team Department','Support','support'],
- establishment_leader:['Department of Centers Establishment','Centers Establishment','establishment'],
- media_leader:['Media','Media and Public Relation','Media & PR','media-pr'],
- research_leader:['Research and Training','research'],
- monday_leader:['Monday Staff Program','Monday Staff','monday-staff']
-};
-const normalizeUnit=v=>String(v??'').trim().toLowerCase();
-const isNineHQDepartment=department=>Object.values(hqDepartmentAliases).some(names=>names.some(n=>normalizeUnit(n)===normalizeUnit(department)));
-export const isHQReporter=u=>!!u&&stateOf(u)==='active'&&!u.center&&
- Object.prototype.hasOwnProperty.call(hqDepartmentAliases,u.role)&&
- hqDepartmentAliases[u.role].some(x=>normalizeUnit(x)===normalizeUnit(u.department));
 export const permissions = ['reports','review_reports','review_plans','comments','attendance','announcements','projects','documents','manage_users','v11:oversight','v11:approve','v11:publish','v11:teaching','v11:edit_manual'];
 export const sourceIds = ['event','counseling','research','followup','service','media'];
 export const seedPeople = [
@@ -44,16 +26,17 @@ export const permit = (u,p) => !!u && stateOf(u)==='active' && (full(u) || (u.ad
 export const seesReports = u => !!u && stateOf(u)==='active' &&
  (directors.includes(u.role)||isHQReporter(u));
 export const writesReports = u => seesReports(u);
+const normalizeUnit=v=>String(v??'').trim().toLowerCase();
 const sameUnit=(a,b)=>!!normalizeUnit(a)&&normalizeUnit(a)===normalizeUnit(b);
 function canSeeLegacyItem(u,r,kind){
  if(stateOf(u)!=='active')return false;
- if(directors.includes(u.role))return true;
+ if(isDirectorRole(u))return true;
  if(!isHQReporter(u))return false;
  // Shared HQ reporting: leaders can see all NINE HQ departments, never a
  // center report or unrelated staff/personal record. Own drafts remain private.
  if(r.original)return false;
  return !r.center&&isNineHQDepartment(r.department)&&
-   (r.userId===u.id||r.submission!=='draft');
+   (r.userId===u.id||r.submission==='submitted'||['submitted','delayed','approved','locked'].includes(r.status));
 }
 export const managesAttendance = u => permit(u,'attendance') || ['admin_finance','monday_leader'].includes(u?.role);
 export const publishes = u => permit(u,'announcements') || ['admin_finance','monday_leader'].includes(u?.role);
