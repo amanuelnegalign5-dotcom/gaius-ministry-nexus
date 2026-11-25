@@ -1,13 +1,14 @@
-import {eligibleGrantRecipient,classifiedGrant,roleClass} from './gaius-report-policy.js';
+import {eligibleGrantRecipient,classifiedGrant,roleClass,isNineHQDepartment} from './gaius-report-policy.js';
 // Shared scoped grant evaluator. Each evaluation is built from current server data,
 // never from client-submitted roles or cached authorizations.
 const active=u=>!!u?.id&&(u.accountStatus||'active')==='active'&&!u.onboarding;
 const directors=['country_director','international_director'];
 const kindModule={centers:'center_registry',centerUnits:'department_catalog',followups:'department_plan_tracking',centerAttendance:'center_attendance',succession:'succession',mentorship:'mentorship',teaching:'teaching',manuals:'documents',documents:'documents',board:'advisory_board',advisoryMeetings:'advisory_board',committees:'document_committee',initiatives:'community_projects',tasks:'administration',updates:'media'};
-export const operationModule=r=>r.kind==='monthly'?(r.scopeType==='center'?'center_reports':'hq_reports'):r.kind==='plans6'?(r.scopeType==='center'?'center_plans':'hq_plans'):kindModule[r.kind];
+export const operationModule=r=>r.kind==='monthly'?(r.scopeType==='center'?'center_reports':r.scopeType==='hq'?'hq_reports':null):r.kind==='plans6'?(r.scopeType==='center'?'center_plans':r.scopeType==='hq'?'hq_plans':null):kindModule[r.kind];
 export function grantContext(db,u,now=Date.now()){
  const centers=db.all('governance_records').filter(r=>r.kind==='center'&&r.status!=='archived');
- const resolve=key=>{const direct=centers.find(r=>r.id===key);if(direct)return direct;const matches=centers.filter(r=>r.name===key||[r.direction,r.name].filter(Boolean).join(' — ')===key);return matches.length===1?matches[0]:null;};
+ const byId=new Map(centers.map(c=>[c.id,c])),byName=new Map();for(const c of centers)for(const key of new Set([c.name,[c.direction,c.name].filter(Boolean).join(' — ')])){if(!key)continue;byName.set(key,byName.has(key)?null:c);}
+ const resolve=key=>byId.get(key)||byName.get(key)||null;
  const own=resolve(u?.center);
  const grants=eligibleGrantRecipient(u)?db.all('governance_grants').filter(g=>{
   if(g.recipientId!==u.id||!classifiedGrant(u,g.modules,g.actions)||g.status!=='active'||g.revokedAt||!['permission','delegation'].includes(g.type))return false;
@@ -22,7 +23,8 @@ export function grantContext(db,u,now=Date.now()){
   return grants.some(g=>g.modules.includes(module)&&g.actions.includes(action)&&(g.scope==='organization'||!!centerId&&g.scope===centerId||!!region&&g.scope===region));
  };
  const record=(r,action)=>{
-  if(!r||r.scopeType==='personal')return false;
+  if(!r||!['center','hq','organization'].includes(r.scopeType))return false;
+  if(r.scopeType==='hq'&&!isNineHQDepartment(r.scopeId)||r.scopeType==='organization'&&r.scopeId!=='org')return false;
   const c=r.scopeType==='center'?resolve(r.scopeId):null;
   if(r.scopeType==='center'&&!c)return false;
   if(action==='view'&&!['submitted','approved'].includes(r.status))return false;
