@@ -132,3 +132,14 @@ test('document grant scope governs upload and file retrieval; personal and other
  assert.equal(canReadFile(h,f,db),false);
  assert.equal(canUploadFile(h,'center','East',db),false);
 });
+
+test('a registry ID and its unique center name identify the same authorized center',()=>{
+ const {h,p,db,g}=fixture();
+ db.put('governance_grants',{...g,modules:['center_reports'],actions:['view','create','edit']});
+ const data={title:'Synthetic',month:'2026-11',activity:'Training',result:'Done'};
+ const id=v11Command(db,h,'v11.save',{kind:'monthly',scopeType:'center',scopeId:'east',data}).id;
+ const r=v11State(db,h).v11.records.find(x=>x.id===id);
+ v11Command(db,h,'v11.transition',{id,version:r._v,decision:'submit'});
+ assert.ok(v11State(db,p).v11.records.some(x=>x.id===id),'same-center potential leader can see submitted report through registry ID');
+ assert.equal(v11State(db,{...p,center:'West'}).v11.records.some(x=>x.id===id),false);
+});
