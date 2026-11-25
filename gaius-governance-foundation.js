@@ -1,3 +1,4 @@
+import {eligibleDelegate,classifiedGrant} from './gaius-report-policy.js';
 // Proposed governance foundation. Not yet connected to production authorization.
 // Store grants server-side; never trust a grant or timestamp supplied by a client.
 export const DIRECTORS = Object.freeze(['country_director','international_director']);
@@ -20,9 +21,9 @@ const scopeValid = s => !!s && (s.type==='organization' && s.id==='org' || ['hq'
 const scopeMatches = (g,r) => scopeValid(g)&&scopeValid(r)&&(g.type==='organization'||g.type===r.type&&g.id===r.id);
 // Directors alone may create or revoke these grants; an acting director never inherits grant management.
 export function validateGrant(issuer,recipient,grant) {
- if(!director(issuer)||!active(recipient)||!HQ_LEADERS.includes(recipient.role)||issuer.id===recipient.id) return false;
+ if(!director(issuer)||!eligibleDelegate(recipient)||issuer.id===recipient.id) return false;
  if(!grant||grant.issuerId!==issuer.id||grant.recipientId!==recipient.id||!['permission','delegation'].includes(grant.type)) return false;
- if(!unique(grant.modules)||!grant.modules.every(m=>MODULES.includes(m))||!unique(grant.actions)||!grant.actions.every(a=>ACTIONS.includes(a))||!scopeValid(grant.scope)) return false;
+ if(!classifiedGrant(recipient,grant.modules,grant.actions)||!unique(grant.modules)||!grant.modules.every(m=>MODULES.includes(m))||!unique(grant.actions)||!grant.actions.every(a=>ACTIONS.includes(a))||!scopeValid(grant.scope)) return false;
  if(grant.type==='delegation'&&(!key(grant.purpose)||!key(grant.reference)||!Number.isFinite(instant(grant.startsAt))||!Number.isFinite(instant(grant.endsAt)))) return false;
  if(grant.startsAt!=null&&!Number.isFinite(instant(grant.startsAt))) return false;
  if(grant.endsAt!=null&&!Number.isFinite(instant(grant.endsAt))) return false;
