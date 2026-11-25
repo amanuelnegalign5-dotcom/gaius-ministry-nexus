@@ -260,7 +260,7 @@ async function refresh(){
  // UI-only notification: no credentials or organizational data leave the browser.
  const identity={id:next.me?.id,role:next.me?.role};
  window.GAIUS_ACTIVE_IDENTITY=identity;
- if(first)window.dispatchEvent(new CustomEvent('gaius:nexus-session-ready',{detail:identity}));
+ if(first)window.dispatchEvent(new CustomEvent('gaius:nexus-session-ready',{detail:{id:next.me?.id,role:next.me?.role}}));
 }
 async function act(el,fn){
  if(busy.has(el))return;busy.add(el);if(el.matches('button'))el.disabled=true;
