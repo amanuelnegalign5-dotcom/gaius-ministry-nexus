@@ -1,3 +1,4 @@
+import {classifiedPermissions,roleClass,isCenterAccount} from './gaius-report-policy.js';
 import * as store from './gaius-store.js';
 import { CENTER_UNITS } from './gaius-v11-model.js';
 import { roleDepartments, directors, permissions, seedPeople, stateOf, full, permit, seesReports, writesReports, managesAttendance, isMondayParticipant, publishes, canManage, flow, version } from './gaius-core.js';
@@ -717,8 +718,9 @@ function userAccessEditor(u){
  if(!full(current())||stateOf(u)!=='active')return '';
  return `<details class="accessEditor"><summary>${h(t('permissions'))}</summary><label>${h(t('role'))}<select data-role>${options(Object.keys(roleDepartments).map(k=>[k,role(k)]),u.role)}</select></label><label>${h(t('department'))}<select data-department>${options(Object.keys(departments).map(k=>[k,dept(k)]),u.department)}</select></label>
  <label>Center / ማዕከል<input data-center value="${h(u.center||'')}" placeholder="Center"></label>
- <label class="checkLine"><input type="checkbox" data-full ${u.fullAdmin?'checked':''}> ${h(t('fullAdmin'))}</label><div class="actions">${permissions.map(p=>`<label class="perm pill"><input type="checkbox" data-permission="${p}" ${(u.adminPermissions||[]).includes(p)?'checked':''}>${h(t(p))}</label>`).join('')}</div><div class="actions">${button('access','save')}</div></details>`;
+ <input type="checkbox" data-full hidden ${directors.includes(u.role)?'checked':''}><p data-permission-class>${h(roleClass(u))}</p><div class="actions" data-role-permissions>${classifiedPermissions(u).map(p=>`<label class="perm pill"><input type="checkbox" data-permission="${p}" ${(u.adminPermissions||[]).includes(p)?'checked':''}>${h(t(p))}</label>`).join('')}</div><div class="actions">${button('access','save')}</div></details>`;
 }
+document.addEventListener('change',e=>{if(!e.target.matches('.accessEditor [data-role], .accessEditor [data-center]'))return;const editor=e.target.closest('.accessEditor'),selected={role:editor.querySelector('[data-role]').value,center:editor.querySelector('[data-center]').value,accountStatus:'active'};editor.querySelector('[data-permission-class]').textContent=roleClass(selected);editor.querySelector('[data-role-permissions]').innerHTML=classifiedPermissions(selected).map(p=>`<label class="perm pill"><input type="checkbox" data-permission="${p}"> ${h(t(p))}</label>`).join('');});
 function renderAdmin(){
  const me=current();if(!permit(me,'manage_users')){$('adminUsers').replaceChildren();$('queue').replaceChildren();$('auditList').replaceChildren();return;}
  const us=view.users,q=val('userSearch').toLowerCase(),filter=val('userFilter');
@@ -733,7 +735,7 @@ function renderAdmin(){
   <details><summary>${h(t('profile'))}</summary>${fields([...profileKeys.filter(k=>k!=='name').map(k=>[k,u[k]]),...addrKeys.map(k=>[k,u.address?.[k]])])}</details>
   ${userAccessEditor(u)}${full(me)?permanentDeleteEditor(u):''}${manage&&status==='active'&&me.id!==u.id?`<details><summary>${h(t('resetPassword'))}</summary><label>${h(t('tempPassword'))}<input data-reset type="password" autocomplete="new-password"></label>${button('reset','save')}</details>`:''}</article>`;
  }).join('')||empty();
- selectOptions('successorUser',us.filter(u=>stateOf(u)==='active'&&u.id!==me.id).map(u=>[u.id,u.name+' · '+role(u.role)]));
+ selectOptions('successorUser',[]);$('transferAdmin').closest('.card').classList.add('hide');
  vis('exportData',full(me));document.querySelectorAll('.fullAdminOnly').forEach(el=>vis(el,full(me)));
  if(full(me)){
   const queue=[...reports().map(r=>['report',r]),...view.plans.map(r=>['plan',r])].filter(([k,r])=>['submitted','under_review'].includes(flow(r,reviewOf(k,r.id))));
@@ -816,7 +818,7 @@ document.addEventListener('click',e=>{
   }
   if(a.startsWith('account.')){if(a!=='account.remove'||confirm(t('confirmRemove')))await mutate(a,userRef);return;}
   if(a==='access'){await mutate('account.access',{...userRef,role:user.querySelector('[data-role]').value,department:user.querySelector('[data-department]').value,center:user.querySelector('[data-center]').value,
-     permissions:[...user.querySelectorAll('[data-permission]:checked')].map(el=>el.dataset.permission),fullAdmin:user.querySelector('[data-full]').checked});return;}
+     permissions:[...user.querySelectorAll('[data-permission]:checked')].map(el=>el.dataset.permission),fullAdmin:directors.includes(user.querySelector('[data-role]').value)});return;}
   if(a==='reset'){await mutate('account.reset',{...userRef,password:user.querySelector('[data-reset]').value});return;}
   if(a==='edit-profile'){profileForm(view.users.find(u=>u.id===userRef.id));navigate('profilePage');$('profileEditor').open=true;$('profileEditor').scrollIntoView();return;}
  });
