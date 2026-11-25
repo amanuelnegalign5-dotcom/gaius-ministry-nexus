@@ -5,9 +5,9 @@ let preference=['light','dark','system'].includes(read())?read():'system';
 const tr=(am,en)=>root.lang==='en'?en:am;
 function appearance(){
  const actual=preference==='system'?(media.matches?'dark':'light'):preference;
- root.dataset.theme=actual;root.dataset.appearance=preference;
+ root.dataset.theme=actual;root.dataset.appearancePreference=preference;
  document.querySelector('meta[name="theme-color"]')?.setAttribute('content',actual==='dark'?'#101c19':'#167454');
- for(const select of document.querySelectorAll('[data-appearance]')){
+ for(const select of document.querySelectorAll('select[data-appearance]')){
   select.replaceChildren(...[['system','ስርዓት','System'],['light','ብርሃን','Light'],['dark','ጨለማ','Dark']].map(([value,am,en])=>new Option(tr(am,en),value)));
   select.value=preference;select.setAttribute('aria-label',tr('የገጽ ቀለም','Appearance'));
  }
@@ -75,7 +75,7 @@ function showHelp(){
  dialog.append(node('h3',tr('ፈቃድና ግላዊነት','Access & privacy')),node('p',tr('የሚታዩት ገጾች በሚናዎና በተሰጠው ፈቃድ ይወሰናሉ። የጎደለ ፈቃድ ካለ ዳይሬክተርዎን ያነጋግሩ። የይለፍ ቃልና ሚስጥራዊ መረጃ አያጋሩ።','Visible pages depend on your role and grants. Contact your director if access is missing. Never share passwords or confidential records.')),node('h3',tr('የገጽ ቀለም','Appearance')),node('p',tr('Light፣ Dark ወይም System ይምረጡ። ምርጫዎ በዚህ Browser ይቀመጣል።','Choose Light, Dark or System in the header. Your preference is saved in this browser.')));
  if(!dialog.open)dialog.showModal();
 }
-document.addEventListener('change',e=>{if(!e.target.matches('[data-appearance]'))return;preference=e.target.value;try{localStorage.setItem(prefKey,preference);}catch{}appearance();});
+document.addEventListener('change',e=>{if(!e.target.matches('select[data-appearance]'))return;preference=e.target.value;try{localStorage.setItem(prefKey,preference);}catch{}appearance();});
 document.addEventListener('click',e=>{if(e.target.closest('[data-help]'))showHelp();});
 new MutationObserver(()=>{appearance();if(dialog.open)showHelp();}).observe(root,{attributes:true,attributeFilter:['lang']});
 window.addEventListener('gaius:nexus-session-cleared',()=>{if(dialog.open)dialog.close();dialog.replaceChildren();});
