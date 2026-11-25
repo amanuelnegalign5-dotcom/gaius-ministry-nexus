@@ -113,3 +113,48 @@ test('unassigned center account sees assignment warning rather than an unexplain
  await expect(nav.locator('[data-center-shortcut="centerAttendance"]')).toHaveCount(0);
  await expect(nav.locator('[data-center-shortcut="overview"]')).toBeVisible();
 });
+
+test('staff sees individually granted documents and announcements, and loses them after revocation',async({page})=>{
+ await enter(page,'staff','');
+ await expect(page.locator('[data-page="documents"]')).toBeHidden();
+ await expect(page.locator('[data-page="board"]')).toBeHidden();
+ await page.locator('[data-page="workspace"]').click();
+ await expect(page.locator('#workspace')).toBeVisible();
+ await expect(page.locator('#saveProject')).toBeHidden();
+ await page.evaluate(()=>{const u=JSON.parse(localStorage.users);u[0].adminPermissions=['documents','announcements','projects'];localStorage.users=JSON.stringify(u);});
+ await page.locator('#modeLine [data-action="refresh"]').click();
+ await expect(page.locator('[data-page="documents"]')).toBeVisible();
+ await expect(page.locator('[data-page="board"]')).toBeVisible();
+ await page.locator('[data-page="documents"]').click();
+ await expect(page.locator('#documents')).toBeVisible();
+ await page.locator('[data-page="board"]').click();
+ await expect(page.locator('#board')).toBeVisible();
+ await page.locator('[data-page="workspace"]').click();
+ await expect(page.locator('#saveProject')).toBeVisible();
+ await page.evaluate(()=>{const u=JSON.parse(localStorage.users);u[0].adminPermissions=[];localStorage.users=JSON.stringify(u);});
+ await page.locator('#modeLine [data-action="refresh"]').click();
+ await expect(page.locator('[data-page="documents"]')).toBeHidden();
+ await expect(page.locator('[data-page="board"]')).toBeHidden();
+ await expect(page.locator('#saveProject')).toBeHidden();
+});
+test('center permission refresh removes revoked editing controls without removing attendance reading',async({page})=>{
+ await enter(page,'center_leader','Gerji');
+ await page.evaluate(()=>{const u=JSON.parse(localStorage.users);u[0].adminPermissions=['center:attendance'];localStorage.users=JSON.stringify(u);});
+ await page.locator('#modeLine [data-action="refresh"]').click();
+ await page.locator('[data-center-shortcut="centerAttendance"]').click();
+ await expect(page.locator('#v11form')).toBeVisible();
+ await page.evaluate(()=>{const u=JSON.parse(localStorage.users);u[0].adminPermissions=[];localStorage.users=JSON.stringify(u);document.dispatchEvent(new Event('visibilitychange'));});
+ await expect(page.locator('#v11form')).toHaveCount(0);
+ await expect(page.locator('#v11Kind')).toHaveValue('centerAttendance');
+ await expect(page.locator('[data-section="delegation"]')).toHaveCount(0);
+});
+for(const role of ['country_director','international_director','hq_staff','staff','media_leader','center_leader','potential_department_leader','volunteer'])test(role+' opens every visible legacy page and Nexus section',async({page})=>{
+ await enter(page,role,['center_leader','potential_department_leader','volunteer'].includes(role)?'Gerji':'');
+ const pages=await page.locator('#app .nav:visible').evaluateAll(nodes=>nodes.map(n=>n.dataset.page));
+ for(const id of pages){await page.locator('[data-page="'+id+'"]').click();await expect(page.locator('#'+id)).toBeVisible();}
+ await page.locator('#v11launch').click();
+ await expect(page.locator('#gaiusV11 .v11nav')).toBeVisible();
+ const sections=await page.locator('#gaiusV11 [data-section]:visible').evaluateAll(nodes=>nodes.map(n=>n.dataset.section));
+ for(const section of sections){await page.locator('#gaiusV11 [data-section="'+section+'"]').click();await expect(page.locator('#gaiusV11 [data-section="'+section+'"]')).toHaveClass('on');await expect(page.locator('#gaiusV11 .v11content')).toBeVisible();}
+ if(['center_leader','potential_department_leader','volunteer'].includes(role))await expect(page.locator('#gaiusV11 [data-section="delegation"]')).toHaveCount(0);
+});
