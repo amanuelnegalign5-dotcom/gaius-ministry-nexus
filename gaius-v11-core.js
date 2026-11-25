@@ -307,7 +307,7 @@ export function canReadFile(u,f,db=null,ctx=null){
  if(f.ownerId===u.id)return true;
  if(db&&f.scopeType!=='personal'){
   const grant=ctx||grantContext(db,u);const r={kind:'documents',scopeType:f.scopeType,scopeId:f.scopeId,status:f.status==='pending'?'submitted':f.status};
-  if(grant.record(r,'view')||grant.record(r,'approve'))return true;
+  if(f.status==='approved'&&grant.record(r,'view')||grant.record(r,'approve'))return true;
  }
  if(f.status!=='approved')return false;
  if((f.allowedUserIds||[]).includes(u.id))return true;
