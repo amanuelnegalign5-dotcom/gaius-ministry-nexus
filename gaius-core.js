@@ -1,6 +1,6 @@
 // Shared domain rules for the v10 workspace, updated to v11.
 import {v11Command,v11State,approveFile} from './gaius-v11-core.js';
-import {isHQReporter,isNineHQDepartment,isDirectorRole} from './gaius-report-policy.js';
+import {isHQReporter,isNineHQDepartment,isDirectorRole,isMondayParticipant,isMondayManager,isMeetingDate} from './gaius-report-policy.js';
 export const roleDepartments = {
   media_leader:'Media', followup_leader:'Follow-up', service_leader:'Service Coordination',
   counseling_leader:'Counseling and Support', research_leader:'Research and Training', event_leader:'Event',
@@ -38,7 +38,7 @@ function canSeeLegacyItem(u,r,kind){
  return !r.center&&isNineHQDepartment(r.department)&&
    (r.userId===u.id||r.submission==='submitted'||['submitted','delayed','approved','locked'].includes(r.status));
 }
-export const managesAttendance = u => permit(u,'attendance') || ['admin_finance','monday_leader'].includes(u?.role);
+export const managesAttendance = isMondayManager;
 export const publishes = u => permit(u,'announcements') || ['admin_finance','monday_leader'].includes(u?.role);
 export const now = () => new Date().toISOString();
 export const version = r => Number(r?._v||0);
@@ -310,7 +310,7 @@ function editComment(db,u,d){
     author:old?.author||u.name,text,visible:d.visible!==false,updatedAt:now(),editedBy:u.id};
   put(db,'comments',c);audit(db,u,'comment.save',report.id);return {id:c.id};
 }
-function personKnown(db,id){return seedPeople.some(p=>p.id===id)||stateOf(db.one('users',id))==='active'&&!!db.one('users',id);}
+function mondayPerson(db,id){return db.one('users',id)||seedPeople.find(p=>p.id===id);}
 function attachment(f){
   if(!f)return null;
   required(typeof f.data==='string' && /^data:[^,"<>\s]*;base64,[A-Za-z0-9+/=]*$/.test(f.data) && f.data.length<=2801500,'fileInvalid');
@@ -321,8 +321,9 @@ function editRecord(db,u,bucket,d){
   const old=d.id?exists(db.one(bucket,d.id)):null;let values;
   if(bucket==='attendance'){
     need(managesAttendance(u)); const {personId,date,status,note,programType}=strings(d,['personId','date','status','note','programType']);
-    required(personKnown(db,personId)||old?.personId===personId,'required');
-    required(/^\d{4}-\d\d-\d\d$/.test(date)&&['present','absent','permitted','late'].includes(status)&&['regular','special','event'].includes(programType));
+    need(isMondayParticipant(mondayPerson(db,personId)),'forbidden');
+    if(old)need(isMondayParticipant(mondayPerson(db,old.personId)),'forbidden');
+    required(isMeetingDate(date,programType==='regular'?1:undefined)&&['present','absent','permitted','late'].includes(status)&&['regular','special','event'].includes(programType));
     const same=db.all(bucket).findLast(r=>r.id!==old?.id && r.date===date && r.personId===personId && (r.programType||'regular')===programType);
     if(same && (!old || !(old.date===date && old.personId===personId && (old.programType||'regular')===programType)))throw new AppError('attendanceExists',409);
     values={personId,date,status,note,programType,recordedBy:u.id,personName:db.one('users',personId)?.name||seedPeople.find(p=>p.id===personId)?.name||old?.personName};
@@ -367,7 +368,8 @@ function visibleState(db,u){
     users:admin?all.filter(x=>full(u)||canManage(u,x)).map(privateUser):[],reports,plans,
     reviews:reviews.filter(r=>r.kind==='plan'?planIds.has(r.itemId):reportIds.has(r.itemId)),
     comments:reportAccess?db.all('comments').filter(c=>reportIds.has(c.reportId)&&(c.visible===true||directors.includes(u.role))):[],
-    attendance:db.all('attendance').filter(r=>managesAttendance(u)||r.personId===u.id),
+    mondayRoster:isMondayManager(u)?[...seedPeople,...members].filter(isMondayParticipant).map(directoryUser):isMondayParticipant(u)?[directoryUser(u)]:[],
+    attendance:isMondayParticipant(u)?db.all('attendance').filter(r=>isMondayParticipant(mondayPerson(db,r.personId))&&(managesAttendance(u)||r.personId===u.id)):[],
     projects:db.all('projects').filter(r=>full(u)||r.createdBy===u.id),announcements:db.all('announcements'),
     documents:permit(u,'documents')?db.all('documents').filter(r=>full(u)||r.ownerId===u.id):[],
     audit:full(u)?db.all('audit').slice(-100).reverse():[],...v11State(db,u)};
@@ -421,6 +423,7 @@ function command(db,u,a,d,verifier,hashes){
     const seen=new Set();
     for(const row of d.rows){
       required(!seen.has(row.personId));seen.add(row.personId);
+      need(isMondayParticipant(mondayPerson(db,row.personId)),'forbidden');
       editRecord(db,u,'attendance',{...row,date:d.date,programType:d.programType});
     }
     return {count:seen.size};
