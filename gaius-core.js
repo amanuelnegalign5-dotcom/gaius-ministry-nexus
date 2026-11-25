@@ -1,6 +1,6 @@
 // Shared domain rules for the v10 workspace, updated to v11.
 import {v11Command,v11State,approveFile} from './gaius-v11-core.js';
-import {isCenterRole,isHQReporter,isNineHQDepartment,isDirectorRole} from './gaius-report-policy.js';
+import {seesHQReports,isCenterRole,isHQReporter,isNineHQDepartment,isDirectorRole} from './gaius-report-policy.js';
 export const roleDepartments = {
   media_leader:'Media', followup_leader:'Follow-up', service_leader:'Service Coordination',
   counseling_leader:'Counseling and Support', research_leader:'Research and Training', event_leader:'Event',
@@ -8,7 +8,7 @@ export const roleDepartments = {
   support_leader:'Support Team Department', establishment_leader:'Department of Centers Establishment',
   international_staff:'International', assisting_staff:'', prayer_staff:'Prayer',
   country_director:'', international_director:'',
-  center_leader:'',potential_center_leader:'',center_department_leader:'',potential_department_leader:'',volunteer:'',hq_staff:''
+  senior_center_leader:'',center_leader:'',potential_center_leader:'',center_department_leader:'',potential_department_leader:'',volunteer:'',hq_staff:''
 };
 export const directors = ['country_director','international_director'];
 export const permissions = ['reports','review_reports','review_plans','comments','attendance','announcements','projects','documents','manage_users','v11:oversight','v11:approve','v11:publish','v11:teaching','v11:edit_manual','v11:upload_file'];
@@ -23,15 +23,14 @@ const own = (o,k) => Object.prototype.hasOwnProperty.call(o,k);
 export const stateOf = u => u?.accountStatus || 'active'; // Existing v10 accounts were admitted at registration.
 export const full = u => !!u && stateOf(u)==='active' && (directors.includes(u.role) || u.fullAdmin===true);
 export const permit = (u,p) => !!u && stateOf(u)==='active' && (full(u) || (u.adminPermissions||[]).includes(p));
-export const seesReports = u => !!u && stateOf(u)==='active' &&
- (directors.includes(u.role)||isHQReporter(u));
-export const writesReports = u => seesReports(u);
+export const seesReports = u => seesHQReports(u);
+export const writesReports = u => seesReports(u)&&(isDirectorRole(u)||isHQReporter(u));
 const normalizeUnit=v=>String(v??'').trim().toLowerCase();
 const sameUnit=(a,b)=>!!normalizeUnit(a)&&normalizeUnit(a)===normalizeUnit(b);
 function canSeeLegacyItem(u,r,kind){
  if(stateOf(u)!=='active')return false;
  if(isDirectorRole(u))return true;
- if(!isHQReporter(u))return false;
+ if(!seesHQReports(u))return false;
  // Shared HQ reporting: leaders can see all NINE HQ departments, never a
  // center report or unrelated staff/personal record. Own drafts remain private.
  if(r.original)return false;
@@ -39,6 +38,11 @@ function canSeeLegacyItem(u,r,kind){
    (r.userId===u.id||r.submission==='submitted'||['submitted','delayed','approved','locked'].includes(r.status));
 }
 export const mondayMember = u => !!u && stateOf(u)==='active' && (u.role==='staff'||own(roleDepartments,u.role)) && !isCenterRole(u.role);
+export const staffViews=['attendance','workspace','directory','board','documents'];
+export function staffViewOverride(u,page){
+ if(!mondayMember(u)||isDirectorRole(u)||!staffViews.includes(page))return 'default';
+ return u.staffViews?.[page]||'default';
+}
 export const managesAttendance = u => mondayMember(u) && (permit(u,'attendance') || ['admin_finance','monday_leader'].includes(u.role));
 export const publishes = u => permit(u,'announcements') || ['admin_finance','monday_leader'].includes(u?.role);
 export const now = () => new Date().toISOString();
@@ -82,7 +86,7 @@ function profileData(data,previous={},complete=false){
   required(out.name,'required');
   if(complete){
     required(out.phone && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(out.email),'profileRequired');
-    if(['center_leader','potential_center_leader','center_department_leader','potential_department_leader','volunteer'].includes(out.role))required(out.center,'centerRequired');
+    if(isCenterRole(out.role))required(out.center,'centerRequired');
   }
   return out;
 }
@@ -101,7 +105,7 @@ function keepOne(db,old,next){
 function timestampUser(data,passwordHash){
   const role=knownRole(data.role);
   return {id:crypto.randomUUID(),name:txt(data.name,240),username:userName(data.username),role,
-    department:roleDepartments[role]||(['center_leader','potential_center_leader','volunteer'].includes(role)?'':txt(data.department,160)),center:txt(data.center,160),passwordHash,createdAt:now(),adminPermissions:[],sessionVersion:0};
+    department:roleDepartments[role]||(['senior_center_leader','potential_center_leader','volunteer'].includes(role)?'':txt(data.department,160)),center:txt(data.center,160),passwordHash,createdAt:now(),adminPermissions:[],sessionVersion:0};
 }
 function register(db,data,verifier,bootstrapAuthorized){
   const base=timestampUser(data,verifier);uniqueName(db,base.username);consent(data);
@@ -239,6 +243,18 @@ function manageAccount(db,actor,action,data,secret,hashes){
       next.department=roleDepartments[next.role]||txt(data.department||u.department,160);
       next.center=txt(data.center??u.center,160);
       if(isCenterRole(next.role))required(next.center,'centerRequired');
+      if(data.staffViews!==undefined){
+        required(data.staffViews&&typeof data.staffViews==='object'&&!Array.isArray(data.staffViews)&&Object.entries(data.staffViews).every(([key,value])=>staffViews.includes(key)&&['allow','deny','default'].includes(value)),'invalidView');
+        next.staffViews={...data.staffViews};
+      }
+      if(data.hqReportingView!==undefined){
+        required(['default','allow','deny'].includes(data.hqReportingView),'invalidView');
+        next.hqReportingView=data.hqReportingView;
+      }
+      if(data.centerReportViews!==undefined){
+        required(Array.isArray(data.centerReportViews)&&data.centerReportViews.length<=100&&data.centerReportViews.every(s=>typeof s==='string'&&s.trim()&&s.length<=160),'invalidView');
+        next.centerReportViews=[...new Set(data.centerReportViews.map(s=>s.trim()))];
+      }
       next.adminPermissions=[...new Set(data.permissions)];next.fullAdmin=data.fullAdmin===true;
       break;
     case 'account.grant':
@@ -259,7 +275,7 @@ function reviewedRecord(db,kind,id){
   required(['plan','report'].includes(kind),'unknown');
   return kind==='report'&&sourceIds.includes(id)?{id,original:true}:exists(db.one(reviewKind(kind),id));
 }
-function canWriteItem(u,k){return seesReports(u);}
+function canWriteItem(u,k){return writesReports(u);}
 function canEditItem(u,r,k,review){
   if(r.original)return false;
   return full(u)||(canWriteItem(u,k)&&r.userId===u.id&&['draft','revision_requested'].includes(flow(r,review)));
@@ -368,13 +384,13 @@ function visibleState(db,u){
     u.center?members.filter(x=>x.id===u.id||x.center===u.center||directors.includes(x.role)):
     u.department?members.filter(x=>x.id===u.id||(!x.center&&x.department===u.department)||directors.includes(x.role)):
     members.filter(x=>x.id===u.id||directors.includes(x.role));
-  return {me:privateUser(u),directory:visiblePeople.map(directoryUser),former:full(u)?all.filter(x=>stateOf(x)==='removed').map(x=>({id:x.id,name:x.name})):[],
+  return {me:privateUser(u),directory:(staffViewOverride(u,'directory')==='deny'?visiblePeople.filter(p=>p.id===u.id):visiblePeople).map(directoryUser),former:full(u)?all.filter(x=>stateOf(x)==='removed').map(x=>({id:x.id,name:x.name})):[],
     users:admin?all.filter(x=>full(u)||canManage(u,x)).map(privateUser):[],reports,plans,
     reviews:reviews.filter(r=>r.kind==='plan'?planIds.has(r.itemId):reportIds.has(r.itemId)),
     comments:reportAccess?db.all('comments').filter(c=>reportIds.has(c.reportId)&&(c.visible===true||directors.includes(u.role))):[],
-    attendance:mondayMember(u)?db.all('attendance').filter(r=>managesAttendance(u)||r.personId===u.id):[],
-    projects:mondayMember(u)?db.all('projects').filter(r=>full(u)||r.createdBy===u.id):[],announcements:db.all('announcements'),
-    documents:permit(u,'documents')?db.all('documents').filter(r=>full(u)||r.ownerId===u.id):[],
+    attendance:mondayMember(u)&&staffViewOverride(u,'attendance')!=='deny'?db.all('attendance').filter(r=>managesAttendance(u)||r.personId===u.id):[],
+    projects:mondayMember(u)&&staffViewOverride(u,'workspace')!=='deny'?db.all('projects').filter(r=>full(u)||r.createdBy===u.id):[],announcements:staffViewOverride(u,'board')==='deny'?[]:db.all('announcements'),
+    documents:staffViewOverride(u,'documents')!=='deny'&&(permit(u,'documents')||staffViewOverride(u,'documents')==='allow')?db.all('documents').filter(r=>full(u)||r.ownerId===u.id):[],
     audit:full(u)?db.all('audit').slice(-100).reverse():[],...v11State(db,u)};
 }
 const encoder=new TextEncoder();
