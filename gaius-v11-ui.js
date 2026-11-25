@@ -89,13 +89,15 @@ launch.onclick=()=>{
 };
 // The Director lands in their Command Center on successful login, without losing
 // any preserved v10 pages. Other roles keep their existing restricted landing pages.
-window.addEventListener('gaius:nexus-session-ready',event=>{
- const identity=event.detail||{};
+function maybeAutoOpen(identity={}){
  if(!identity.id||autoOpenedDirectorId===identity.id)return;
  if(!directorRole(identity.role)&&!['center_senior_leader','center_leader','center_department_leader','potential_center_leader','potential_department_leader'].includes(identity.role))return;
  autoOpenedDirectorId=identity.id;
  void open();
-});
+}
+window.addEventListener('gaius:nexus-session-ready',event=>maybeAutoOpen(event.detail||{}));
+// A fast local or cached session can finish before this module registers its listener.
+if(window.GAIUS_ACTIVE_IDENTITY)queueMicrotask(()=>maybeAutoOpen(window.GAIUS_ACTIVE_IDENTITY||{}));
 window.addEventListener('gaius:nexus-session-cleared',()=>{
  close();root.replaceChildren();state=null;autoOpenedDirectorId=null;section='overview';
 });
@@ -106,7 +108,7 @@ const my=()=>state?.me||{};const caps=()=>state?.v11?.capabilities||{};const rec
 const mine=()=>caps().defaultScopeType||(my().center?'center':my().department?'hq':'personal');
 const appStrings={director:['የዳይሬክተር ሥራ','Director workspace'],analytics:['የማዕከላት ትንታኔ','Center analytics'],overview:['ዋና እይታ','Overview'],records:['ሥራ መዝገቦች','Operations'],files:['የሰነድ ማከማቻ','File uploads'],offline:['ያልተላኩ ረቂቆች','Offline drafts'],governance:['የጋይዮስ አስተዳደር','Governance'],reference:['የድርጅት ስሞች','Official names']};
 const tr=s=>appStrings[s]?(localLang()==='am'?appStrings[s][0]:appStrings[s][1]):s;
-function frame(content){root.innerHTML=`<div class="v11wrap"><div class="v11top"><div class="v11identity"><img class="v11logo" src="./icons/official-logo.jpg" alt="Gaius Ministry logo"><div><h1>Gaius Nexus <small>v11.2.3</small></h1><p>${text('የድርጅት አመራር፣ እቅድ፣ ሪፖርትና ክትትል','Ministry leadership, planning, reporting and follow-up')}</p></div></div><button type="button" class="btn ghost" data-v="close">${text('ወደ v10 ገጾች','Back to existing pages')}</button></div>
+function frame(content){root.innerHTML=`<div class="v11wrap"><div class="v11top"><div class="v11identity"><img class="v11logo" src="./icons/official-logo.jpg" alt="Gaius Ministry logo"><div><h1>Gaius Nexus <small>v11.2.4</small></h1><p>${text('የድርጅት አመራር፣ እቅድ፣ ሪፖርትና ክትትል','Ministry leadership, planning, reporting and follow-up')}</p></div></div><button type="button" class="btn ghost" data-v="close">${text('ወደ v10 ገጾች','Back to existing pages')}</button></div>
   <div class="v11nav">${Object.keys(appStrings).filter(x=>x==='director'?caps().director:x==='analytics'?(caps().director||caps().oversight):x==='records'?myAvailableKinds().length>0:x==='files'?(caps().canUploadFile||(state?.v11?.files||[]).length>0):x==='governance'?store.shared&&!state.offlineOnly&&(caps().director||mine()==='center'||!!my().center||caps().hqReports):true).map(x=>`<button class="${section===x?'on':''}" type="button" data-v="section" data-section="${x}">${tr(x)}</button>`).join('')}</div><div id="v11notice" class="v11notice" hidden></div><div class="v11content">${content}</div></div>`;}
 function tile(title,value,desc=''){return `<div class="v11tile"><span>${escape(title)}</span><strong>${escape(value)}</strong><small>${escape(desc)}</small></div>`;}
 function dashboard(){const all=records().filter(r=>r.kind!=='centers'&&r.kind!=='centerUnits');const approved=all.filter(r=>r.status==='approved'),pending=all.filter(r=>r.status==='submitted');

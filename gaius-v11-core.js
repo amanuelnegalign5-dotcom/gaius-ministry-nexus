@@ -132,7 +132,7 @@ function save(db,u,p){
  if(kind==='centerAttendance'){
    check(['sunday','biweekly','special'].includes(data.eventType),'meetingTypeInvalid',400);
    const participant=db.one('users',data.participantId);
-   check(participant&&['center_senior_leader','center_leader','center_department_leader','potential_center_leader','potential_department_leader'].includes(participant.role)&&participant.center===scopeId,'participantRoleInvalid',400);
+   check(participant&&active(participant)&&!participant.onboarding&&['center_senior_leader','center_leader','center_department_leader','potential_center_leader','potential_department_leader'].includes(participant.role)&&participant.center===scopeId,'participantRoleInvalid',400);
    check(!db.all('v11_records').some(r=>r.id!==old?.id&&r.kind===kind&&r.scopeId===scopeId&&r.data.date===data.date&&r.data.eventType===data.eventType&&r.data.participantId===data.participantId&&r.status!=='archived'),'attendanceExists',409);
  }
  const record={id:old?.id||crypto.randomUUID(),kind,scopeType,scopeId,ownerId:old?.ownerId||u.id,ownerName:old?.ownerName||u.name,
