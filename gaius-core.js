@@ -38,7 +38,15 @@ function canSeeLegacyItem(u,r,kind){
  return !r.center&&isNineHQDepartment(r.department)&&
    (r.userId===u.id||r.submission==='submitted'||['submitted','delayed','approved','locked'].includes(r.status));
 }
-export const isMondayParticipant = u => !!u&&stateOf(u)==='active'&&(directors.includes(u.role)||(!u.center&&!['center_senior_leader','center_leader','potential_center_leader','center_department_leader','potential_department_leader','volunteer'].includes(u.role)&&(own(roleDepartments,u.role)||u.role==='staff')));
+export const centerRoles=['center_senior_leader','center_leader','center_department_leader','potential_center_leader','potential_department_leader','volunteer'];
+const mondayStaffRoles=['media_leader','followup_leader','service_leader','counseling_leader','research_leader','event_leader','admin_finance','monday_leader','support_leader','establishment_leader','international_staff','assisting_staff','prayer_staff','hq_staff','staff'];
+export const isMondayParticipant = u => !!u&&!u.onboarding&&stateOf(u)==='active'&&(directors.includes(u.role)||(!String(u.center||'').trim()&&mondayStaffRoles.includes(u.role)));
+function validateCenterAssignment(u){
+ if(!centerRoles.includes(u.role))return;
+ required(u.center,'centerRequired');
+ if(['center_senior_leader','center_leader','center_department_leader'].includes(u.role))required(u.department,'departmentRequired');
+ required(!['monday staff program','monday-staff','international','prayer','የሰኞ ሠራተኞች ፕሮግራም'].includes(normalizeUnit(u.department)),'departmentScopeMismatch');
+}
 export const managesAttendance = u => isMondayParticipant(u)&&(permit(u,'attendance') || ['admin_finance','monday_leader'].includes(u?.role));
 export const publishes = u => permit(u,'announcements') || ['admin_finance','monday_leader'].includes(u?.role);
 export const now = () => new Date().toISOString();
@@ -82,8 +90,7 @@ function profileData(data,previous={},complete=false){
   required(out.name,'required');
   if(complete){
     required(out.phone && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(out.email),'profileRequired');
-    if(['center_senior_leader','center_leader','potential_center_leader','center_department_leader','potential_department_leader','volunteer'].includes(out.role))required(out.center,'centerRequired');
-    if(['center_senior_leader','center_leader','center_department_leader'].includes(out.role))required(out.department,'departmentRequired');
+    validateCenterAssignment(out);
   }
   return out;
 }
@@ -218,7 +225,7 @@ function manageAccount(db,actor,action,data,secret,hashes){
   need(permit(actor,'manage_users'));
   if(action==='account.add'){
     const u=timestampUser(data,secret); required(u.name,'required');uniqueName(db,u.username);
-    need(!directors.includes(u.role),'directorUseTransfer');
+    need(!directors.includes(u.role),'directorUseTransfer');validateCenterAssignment(u);
     if(!full(actor))need(canManage(actor,u),'forbidden');
     Object.assign(u,{accountStatus:'active',onboarding:true,createdBy:actor.id,approvedBy:actor.id,approvedAt:now()});
     put(db,'users',u);audit(db,actor,action,u.id);return {id:u.id};
@@ -238,7 +245,7 @@ function manageAccount(db,actor,action,data,secret,hashes){
       required(Array.isArray(data.permissions)&&data.permissions.every(p=>permissions.includes(p)),'roleInvalid');
       next.department=roleDepartments[next.role]||txt(data.department||u.department,160);
       next.center=txt(data.center??u.center,160);
-      if(['center_senior_leader','center_leader','center_department_leader'].includes(next.role))required(next.center&&next.department,'departmentRequired');
+      validateCenterAssignment(next);
       next.adminPermissions=[...new Set(data.permissions)];next.fullAdmin=data.fullAdmin===true;
       break;
     case 'account.grant':
@@ -351,6 +358,7 @@ function editRecord(db,u,bucket,d){
 }
 function removeRecord(db,u,d){
   need(full(u));required(['reports','plans','comments','projects','announcements','attendance','documents'].includes(d.bucket),'unknown');
+  if(d.bucket==='attendance')need(managesAttendance(u));
   need(!(d.bucket==='reports'&&sourceIds.includes(d.id)),'sourceLocked');
   const old=exists(db.one(d.bucket,d.id));fresh(old,d.version);db.drop(d.bucket,d.id);
   audit(db,u,d.bucket+'.remove',d.id);return {id:d.id};
