@@ -33,7 +33,9 @@ export function roleClass(u){
  if(GENERAL_STAFF_ROLES.includes(u.role))return 'staff';
  return 'none';
 }
-export const eligibleDelegate=u=>!!u?.id&&(u.accountStatus||'active')==='active'&&!u.onboarding&&['hq_leader','staff'].includes(roleClass(u));
+// Any active, onboarded account except a Director can receive a Director grant. What the grant may contain
+// (and where it applies) is classified by role in classifiedGrantOptions() and enforced again at read time.
+export const eligibleDelegate=u=>!!u?.id&&(u.accountStatus||'active')==='active'&&!u.onboarding&&roleClass(u)!=='director';
 const hqLegacy=['reports','review_reports','review_plans','comments','attendance','announcements','projects','documents','manage_users','v11:oversight','v11:approve','v11:publish','v11:teaching','v11:edit_manual','v11:upload_file'];
 const staffLegacy=['attendance','announcements','projects','documents','v11:publish','v11:teaching','v11:upload_file'];
 export const CENTER_PERMISSION_KEYS=Object.freeze(['center:attendance','center:lijoch','center:mentorship','center:review_reports','center:review_plans','center:submit_reports','center:submit_plans','center:upload_files']);
@@ -54,8 +56,16 @@ export function centerCanReview(u,r){return !!r&&r.scopeType==='center'&&r.statu
 
 export const legacyPermission=(u,p)=>classifiedPermissions(u).includes(p)&&(u.adminPermissions||[]).includes(p);
 const governanceModules=['center_registry','member_registry','community_projects','document_committee','mentorship','department_plan_tracking','director_visits','center_attendance','hq_plans','hq_reports','center_plans','center_reports','department_catalog','succession','advisory_board','documents','teaching','administration','media'];
+const CENTER_GRANT_MODULES=['center_registry','center_plans','center_reports','center_attendance','documents','teaching'];
+const CENTER_LEAD_ROLES=['center_senior_leader','center_leader','center_department_leader'];
 export function classifiedGrantOptions(u){
  if(!eligibleDelegate(u))return {modules:[],actions:[]};
+ // Center accounts: own-center modules only (never HQ plans/reports, Monday attendance, director visits, succession
+ // or the advisory board). Center leaders may also receive review authority; potential leaders and volunteers may not.
+ if(roleClass(u)==='center'){
+  const lead=CENTER_LEAD_ROLES.includes(u.role);
+  return {modules:lead?[...CENTER_GRANT_MODULES,'member_registry','mentorship']:CENTER_GRANT_MODULES.slice(),actions:lead?['view','create','edit','approve']:['view','create','edit']};
+ }
  // HQ leaders may receive review/approval authority. Other staff receive operational grants, not approval.
  return roleClass(u)==='hq_leader'?{modules:governanceModules.slice(),actions:['view','create','edit','approve']}:{modules:governanceModules.filter(m=>!['member_registry','mentorship','succession','advisory_board','director_visits'].includes(m)),actions:['view','create','edit']};
 }

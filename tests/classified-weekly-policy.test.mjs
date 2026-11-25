@@ -11,16 +11,41 @@ function setup(){
  const east=call('d','governance.save',{kind:'center',name:'East',region:'country',country:'ET'}).id;
  return {db,call,east};
 }
-test('HQ and staff are the only eligible recipients; grants are classified by role',()=>{
- const {db,call}=setup();const p={type:'delegation',scope:'organization',modules:['center_reports'],actions:['view'],startsAt:'2026-11-25T00:00:00Z',endsAt:'2026-11-26T00:00:00Z',purpose:'Review',reference:'D1'};
- assert.equal(eligibleDelegate(db.one('users','f')),true);
+test('every non-Director member can receive a grant, classified by role',()=>{
+ const {db,call,east}=setup();const p={type:'delegation',scope:'organization',modules:['center_reports'],actions:['view'],startsAt:'2026-11-25T00:00:00Z',endsAt:'2026-11-26T00:00:00Z',purpose:'Review',reference:'D1'};
+ for(const id of ['h','f','s','m','p'])assert.equal(eligibleDelegate(db.one('users',id)),true,id);
+ assert.equal(eligibleDelegate(db.one('users','d')),false,'Directors grant; they are not recipients');
+ assert.throws(()=>call('d','governance.grant',{...p,recipientId:'d'}),/recipientInvalid/);
+ // HQ leaders and staff: unchanged organization-wide classification.
  assert.ok(call('d','governance.grant',{...p,recipientId:'f'}).id);
  assert.throws(()=>call('d','governance.grant',{...p,recipientId:'f',actions:['approve']}),/permissionsInvalid/);
- for(const id of ['s','m','p'])assert.throws(()=>call('d','governance.grant',{...p,recipientId:id}),/recipientInvalid/);
- assert.throws(()=>call('h','governance.grant',{...p,recipientId:'f'}),/forbidden/);
+ assert.ok(call('d','governance.grant',{...p,recipientId:'h',actions:['view','approve']}).id);
+ // Center members: own center only, center modules only.
+ const own={...p,scope:east};
+ for(const id of ['s','m','p'])assert.ok(call('d','governance.grant',{...own,recipientId:id}).id,id);
+ for(const id of ['s','m','p'])assert.throws(()=>call('d','governance.grant',{...p,recipientId:id}),/scopeInvalid/,'organization scope refused for '+id);
+ const west=call('d','governance.save',{kind:'center',name:'West',region:'country',country:'ET'}).id;
+ assert.throws(()=>call('d','governance.grant',{...own,scope:west,recipientId:'m'}),/scopeInvalid/,'another center refused');
+ for(const module of ['hq_reports','hq_plans','director_visits','succession','advisory_board'])
+  assert.throws(()=>call('d','governance.grant',{...own,recipientId:'m',modules:[module]}),/permissionsInvalid/,module+' is never delegable to a center member');
+ assert.ok(call('d','governance.grant',{...own,recipientId:'m',actions:['view','approve']}).id,'center leaders may receive review authority');
+ assert.throws(()=>call('d','governance.grant',{...own,recipientId:'p',actions:['approve']}),/permissionsInvalid/,'potential leaders may not');
+ assert.throws(()=>call('h','governance.grant',{...own,recipientId:'m'}),/forbidden/,'only Directors grant');
  const recipients=call('d','governance.list',{}).eligibleHQ;
- assert.deepEqual(recipients.map(x=>x.id).sort(),['f','h']);assert.ok(recipients.find(x=>x.id==='h').actions.includes('approve'));
+ assert.deepEqual(recipients.map(x=>x.id).sort(),['f','h','m','p','s']);
+ assert.equal(recipients.find(x=>x.id==='m').centerId,east);
  assert.ok(!recipients.find(x=>x.id==='f').actions.includes('approve'));
+ assert.ok(!recipients.find(x=>x.id==='p').actions.includes('approve'));
+});
+test('a center member\'s grant stops working outside their own center',()=>{
+ const {db,call,east}=setup();
+ const child=call('d','governance.save',{kind:'child',centerId:east,name:'Synthetic youth',status:'active'}).id;
+ const sees=id=>call(id,'governance.list',{}).records.some(r=>r.id===child);
+ assert.equal(sees('m'),false,'a center leader has no registry access by role alone');
+ call('d','governance.grant',{recipientId:'m',type:'delegation',scope:east,modules:['member_registry'],actions:['view'],startsAt:'2026-11-25T00:00:00Z',endsAt:'2026-11-26T00:00:00Z',purpose:'Cover',reference:'D2'});
+ assert.equal(sees('m'),true,'the delegation opens it');
+ db.put('users',{...db.one('users','m'),center:'West'});
+ assert.equal(sees('m'),false,'moving to another center ends it');
 });
 test('center-only roles cannot inherit legacy administration or HQ file/report visibility',()=>{
  const {db}=setup();const u={...db.one('users','m'),fullAdmin:true,adminPermissions:['attendance','reports','manage_users','v11:approve']};
@@ -60,7 +85,7 @@ test('director-assigned center permission permits own-center attendance only and
  db.put('users',u);
  assert.throws(()=>call('m','governance.save',{...payload,date:'2026-12-06'}),/forbidden/);
 });
-test('center permissions for registry and mentorship do not allow cross-center access or delegation',()=>{
+test('center permissions for registry and mentorship do not allow cross-center access',()=>{
  const {db,call,east}=setup();
  const u=db.one('users','m');
  const payload={kind:'child',centerId:east,name:'Synthetic youth',status:'active',mentorId:'m'};
@@ -68,7 +93,7 @@ test('center permissions for registry and mentorship do not allow cross-center a
  db.put('users',{...u,adminPermissions:['center:lijoch','center:mentorship']});
  const child=call('m','governance.save',payload).id;
  assert.ok(call('m','governance.save',{kind:'mentee',name:'Assignment',centerId:east,childId:child,mentorId:'m',status:'active'}).id);
- assert.ok(!eligibleDelegate(db.one('users','m')));
+ assert.ok(eligibleDelegate(db.one('users','m')),'center leaders can now be delegates, within their own center');
  const west=call('d','governance.save',{kind:'center',name:'West',region:'country',country:'ET'}).id;
  assert.throws(()=>call('m','governance.save',{...payload,centerId:west}),/forbidden/);
 });
@@ -81,12 +106,12 @@ test('center review permission requests changes only, never approves or reviews 
  v11Command(db,u,'v11.transition',{id:'east',version:1,decision:'revision_requested',note:'Revise'});
  assert.equal(db.one('v11_records','east').status,'revision_requested');
 });
-test('potential leaders receive limited own-center options and not management or delegation',()=>{
+test('potential leaders receive limited own-center options and no management',()=>{
  const {db}=setup();const p=db.one('users','p');
  assert.deepEqual(classifiedPermissions(p),['center:submit_reports','center:submit_plans','center:upload_files']);
  assert.ok(!v11State(db,p).v11.capabilities.allowedKinds.includes('monthly'));
  const u={...p,adminPermissions:['center:submit_reports','center:upload_files']};
  assert.ok(v11State(db,u).v11.capabilities.allowedKinds.includes('monthly'));
  assert.equal(v11State(db,u).v11.capabilities.canUploadFile,true);
- assert.equal(eligibleDelegate(u),false);
+ assert.equal(eligibleDelegate(u),true);
 });

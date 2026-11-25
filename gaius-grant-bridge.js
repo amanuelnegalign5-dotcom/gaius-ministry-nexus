@@ -1,4 +1,4 @@
-import {eligibleDelegate,classifiedGrant} from './gaius-report-policy.js';
+import {eligibleDelegate,classifiedGrant,roleClass} from './gaius-report-policy.js';
 // Server-side bridge: explicit new operational grants on pre-existing v11 records.
 // Personal records and director identity are never inherited by a delegate.
 const directors=['country_director','international_director'];
@@ -17,6 +17,7 @@ export function v11Grant(db,u,record,action,now=Date.now()){
  const module=record.kind==='monthly'?(record.scopeType==='center'?'center_reports':'hq_reports'):record.kind==='plans6'?(record.scopeType==='center'?'center_plans':'hq_plans'):kindModule[record.kind];
  if(!module)return false;
  const center=record.scopeType==='center'?resolveCenter(db,record.scopeId):null;
+ if(roleClass(u)==='center'&&!(center&&center.id===resolveCenter(db,u.center)?.id))return false;
  return db.all('governance_grants').some(g=>{
   const issuer=db.one('users',g.issuerId);
   if(g.recipientId!==u.id||!classifiedGrant(u,g.modules,g.actions)||g.status!=='active'||g.revokedAt||!active(issuer)||!directors.includes(issuer.role)||!['permission','delegation'].includes(g.type)||!g.modules?.includes(module)||!g.actions?.includes(action))return false;
