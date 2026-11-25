@@ -1,6 +1,6 @@
 // Shared domain rules for the v10 workspace, updated to v11.
 import {v11Command,v11State,approveFile} from './gaius-v11-core.js';
-import {isHQReporter,isNineHQDepartment,isDirectorRole} from './gaius-report-policy.js';
+import {isCenterRole,isHQReporter,isNineHQDepartment,isDirectorRole} from './gaius-report-policy.js';
 export const roleDepartments = {
   media_leader:'Media', followup_leader:'Follow-up', service_leader:'Service Coordination',
   counseling_leader:'Counseling and Support', research_leader:'Research and Training', event_leader:'Event',
@@ -38,7 +38,8 @@ function canSeeLegacyItem(u,r,kind){
  return !r.center&&isNineHQDepartment(r.department)&&
    (r.userId===u.id||r.submission==='submitted'||['submitted','delayed','approved','locked'].includes(r.status));
 }
-export const managesAttendance = u => permit(u,'attendance') || ['admin_finance','monday_leader'].includes(u?.role);
+export const mondayMember = u => !!u && stateOf(u)==='active' && (u.role==='staff'||own(roleDepartments,u.role)) && !isCenterRole(u.role);
+export const managesAttendance = u => mondayMember(u) && (permit(u,'attendance') || ['admin_finance','monday_leader'].includes(u.role));
 export const publishes = u => permit(u,'announcements') || ['admin_finance','monday_leader'].includes(u?.role);
 export const now = () => new Date().toISOString();
 export const version = r => Number(r?._v||0);
@@ -217,6 +218,7 @@ function manageAccount(db,actor,action,data,secret,hashes){
   if(action==='account.add'){
     const u=timestampUser(data,secret); required(u.name,'required');uniqueName(db,u.username);
     need(!directors.includes(u.role),'directorUseTransfer');
+    if(isCenterRole(u.role))required(u.center,'centerRequired');
     if(!full(actor))need(canManage(actor,u),'forbidden');
     Object.assign(u,{accountStatus:'active',onboarding:true,createdBy:actor.id,approvedBy:actor.id,approvedAt:now()});
     put(db,'users',u);audit(db,actor,action,u.id);return {id:u.id};
@@ -236,6 +238,7 @@ function manageAccount(db,actor,action,data,secret,hashes){
       required(Array.isArray(data.permissions)&&data.permissions.every(p=>permissions.includes(p)),'roleInvalid');
       next.department=roleDepartments[next.role]||txt(data.department||u.department,160);
       next.center=txt(data.center??u.center,160);
+      if(isCenterRole(next.role))required(next.center,'centerRequired');
       next.adminPermissions=[...new Set(data.permissions)];next.fullAdmin=data.fullAdmin===true;
       break;
     case 'account.grant':
@@ -321,14 +324,15 @@ function editRecord(db,u,bucket,d){
   const old=d.id?exists(db.one(bucket,d.id)):null;let values;
   if(bucket==='attendance'){
     need(managesAttendance(u)); const {personId,date,status,note,programType}=strings(d,['personId','date','status','note','programType']);
-    required(personKnown(db,personId)||old?.personId===personId,'required');
+    required(mondayMember(db.one('users',personId)||seedPeople.find(p=>p.id===personId)),'required');
     required(/^\d{4}-\d\d-\d\d$/.test(date)&&['present','absent','permitted','late'].includes(status)&&['regular','special','event'].includes(programType));
+    if(programType==='regular')required(new Date(date+'T12:00:00Z').getUTCDay()===1,'dateInvalid');
     const same=db.all(bucket).findLast(r=>r.id!==old?.id && r.date===date && r.personId===personId && (r.programType||'regular')===programType);
     if(same && (!old || !(old.date===date && old.personId===personId && (old.programType||'regular')===programType)))throw new AppError('attendanceExists',409);
     values={personId,date,status,note,programType,recordedBy:u.id,personName:db.one('users',personId)?.name||seedPeople.find(p=>p.id===personId)?.name||old?.personName};
   }else{
     if(bucket==='announcements')need(publishes(u));
-    if(bucket==='projects')need(full(u)||(isHQReporter(u)&&permit(u,'projects')),'forbidden');
+    if(bucket==='projects')need(mondayMember(u)&&(full(u)||(isHQReporter(u)&&permit(u,'projects'))),'forbidden');
     if(bucket==='documents')need(permit(u,'documents'));
     if(old)need(full(u)||permit(u,bucket));
     const title=txt(d.title,500);required(title,'titleRequired');
@@ -348,6 +352,7 @@ function editRecord(db,u,bucket,d){
 function removeRecord(db,u,d){
   need(full(u));required(['reports','plans','comments','projects','announcements','attendance','documents'].includes(d.bucket),'unknown');
   need(!(d.bucket==='reports'&&sourceIds.includes(d.id)),'sourceLocked');
+  if(['attendance','projects'].includes(d.bucket))need(mondayMember(u));
   const old=exists(db.one(d.bucket,d.id));fresh(old,d.version);db.drop(d.bucket,d.id);
   audit(db,u,d.bucket+'.remove',d.id);return {id:d.id};
 }
@@ -367,8 +372,8 @@ function visibleState(db,u){
     users:admin?all.filter(x=>full(u)||canManage(u,x)).map(privateUser):[],reports,plans,
     reviews:reviews.filter(r=>r.kind==='plan'?planIds.has(r.itemId):reportIds.has(r.itemId)),
     comments:reportAccess?db.all('comments').filter(c=>reportIds.has(c.reportId)&&(c.visible===true||directors.includes(u.role))):[],
-    attendance:db.all('attendance').filter(r=>managesAttendance(u)||r.personId===u.id),
-    projects:db.all('projects').filter(r=>full(u)||r.createdBy===u.id),announcements:db.all('announcements'),
+    attendance:mondayMember(u)?db.all('attendance').filter(r=>managesAttendance(u)||r.personId===u.id):[],
+    projects:mondayMember(u)?db.all('projects').filter(r=>full(u)||r.createdBy===u.id):[],announcements:db.all('announcements'),
     documents:permit(u,'documents')?db.all('documents').filter(r=>full(u)||r.ownerId===u.id):[],
     audit:full(u)?db.all('audit').slice(-100).reverse():[],...v11State(db,u)};
 }
@@ -395,7 +400,7 @@ function admitted(u){need(u,'expired',401);need(stateOf(u)==='active',stateOf(u)
 function command(db,u,a,d,verifier,hashes){
   if(a==='profile.complete'){
     need(u.onboarding);consent(d);
-    const v=profileData(d,u,true);Object.assign(v,{passwordHash:verifier,onboarding:false,privacyVersion:'1.0',privacyAcceptedAt:now(),sessionVersion:(u.sessionVersion||0)+1});
+    const v=profileData({...d,center:u.center},u,true);Object.assign(v,{passwordHash:verifier,onboarding:false,privacyVersion:'1.0',privacyAcceptedAt:now(),sessionVersion:(u.sessionVersion||0)+1});
     put(db,'users',v);audit(db,u,a,u.id);return {};
   }
   need(!u.onboarding,'onboarding');
@@ -506,3 +511,4 @@ export async function handle(db,route,data={},context={}){
     return result;
   });
 }
+
