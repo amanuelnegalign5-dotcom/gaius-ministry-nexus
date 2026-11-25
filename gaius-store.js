@@ -44,7 +44,9 @@ export const shared=!!api;
 export const localArchive=!!configured&&!shared;
 const tokenKey='gaius.v10.session:'+ (api||'local');
 export function hasSession(){return !!(sessionStorage.getItem(tokenKey)||(!shared&&sessionStorage.me));}
-export function clearSession(){sessionStorage.removeItem(tokenKey);if(!shared)sessionStorage.removeItem('me');}
+let stateCache=null,stateFlight=null,stateGeneration=0;
+function invalidateState(){stateGeneration++;stateCache=null;stateFlight=null;}
+export function clearSession(){invalidateState();sessionStorage.removeItem(tokenKey);if(!shared)sessionStorage.removeItem('me');}
 async function call(route,data={}){
   const token=sessionStorage.getItem(tokenKey);
   if(!shared)return handle(local,route,data,{local:true,token,legacyId:sessionStorage.me});
@@ -58,12 +60,25 @@ async function call(route,data={}){
   return body;
 }
 export const info=()=>call('info');
-export const state=()=>call('state');
+// Short-lived in-memory reuse only; never persist private data or use it offline.
+export async function state({reuse=false}={}){
+ const identity=sessionStorage.getItem(tokenKey)||(!shared?sessionStorage.me:'');
+ if(reuse&&navigator.onLine&&identity&&stateCache?.identity===identity&&Date.now()-stateCache.at<5000)return stateCache.value;
+ if(stateFlight?.identity===identity)return stateFlight.promise;
+ const generation=stateGeneration;
+ const promise=call('state').then(value=>{
+  const current=sessionStorage.getItem(tokenKey)||(!shared?sessionStorage.me:'');
+  if(current!==identity||generation!==stateGeneration)throw new AppError('expired',401);
+  stateCache={identity,at:Date.now(),value};return value;
+ }).finally(()=>{if(stateFlight?.promise===promise)stateFlight=null;});
+ stateFlight={identity,promise};return promise;
+}
 export const register=d=>shared&&['country_director','international_director'].includes(d.role)?call('director/claim',{registration:d,code:d.directorEmailCode}):call('register',d);
 export const requestDirectorCode=(role,email,setupKey)=>{if(!shared)throw new AppError('directorRequiresServer',403);return call('director/challenge',{role,email,setupKey});};
-export async function login(d){const {token}=await call('login',d);sessionStorage.setItem(tokenKey,token);if(!shared)sessionStorage.removeItem('me');}
+export async function login(d){invalidateState();const {token}=await call('login',d);sessionStorage.setItem(tokenKey,token);if(!shared)sessionStorage.removeItem('me');}
 export async function logout(){try{await call('logout');}finally{clearSession();}}
 export async function command(action,payload){
+  if(!['governance.list','governance.photo'].includes(action))invalidateState();
   const data={action,payload,requestId:crypto.randomUUID()};
   try{return await call('command',data);}
   catch(e){if(shared&&e.message==='offline'&&navigator.onLine)return call('command',data);throw e;}
@@ -90,6 +105,7 @@ export async function confirmEmailCode(code){
 
 // v11 private evidence attachments: browser never receives an R2 public URL.
 export async function uploadFile(file,scopeType='organization',scopeId='org'){
+  invalidateState();
   if(!shared)throw new AppError('storageRequiresServer',503);
   if(!file||file.size>10*1024*1024)throw new AppError('fileTooLarge',413);
   const token=sessionStorage.getItem(tokenKey);
