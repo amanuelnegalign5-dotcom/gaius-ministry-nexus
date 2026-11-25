@@ -41,3 +41,16 @@ test('center assignment rejects missing department and Monday staff department o
  await assert.rejects(call(db,'d','account.add',{...base,department:'Monday Staff Program'}),/departmentScopeMismatch/);
  const r=await call(db,'d','account.add',{...base,department:'Worship Team'});assert.equal(db.one('users',r.id).center,'Gerji');
 });
+
+test('director can save and revoke center permissions but cannot grant Monday or HQ privileges to center accounts',async()=>{
+ const db=new DB();db.put('users',{id:'d',name:'Director',role:'country_director',accountStatus:'active'});
+ db.put('users',{id:'c',name:'Actual center leader',role:'center_leader',center:'Gerji',department:'Worship Team',accountStatus:'active',_v:1});
+ const p={id:'c',version:1,role:'center_leader',center:'Gerji',department:'Worship Team',fullAdmin:false};
+ await assert.rejects(call(db,'d','account.access',{...p,permissions:['attendance']}),/permissionsInvalid/);
+ await assert.rejects(call(db,'d','account.access',{...p,permissions:['reports']}),/permissionsInvalid/);
+ await call(db,'d','account.access',{...p,permissions:['center:attendance','center:review_reports']});
+ assert.deepEqual(db.one('users','c').adminPermissions,['center:attendance','center:review_reports']);
+ assert.equal(db.one('users','c').name,'Actual center leader');
+ await call(db,'d','account.access',{...p,version:2,permissions:[]});
+ assert.deepEqual(db.one('users','c').adminPermissions,[]);
+});
