@@ -114,6 +114,7 @@ export async function unlockVault(owner,passphrase,onlineState=null){
 export async function refreshVault(state){
  const v=unlocked;if(!v||v.owner!==state.me.id)return;
  const meta=await get('meta:'+v.owner),snapshot=offlineSnapshot(state,Date.now(),v.snapshot.extended===true);
+ if(snapshot.at===v.snapshot.at&&JSON.stringify(snapshot)===JSON.stringify(v.snapshot))return;
  if(encoder.encode(JSON.stringify(snapshot)).length>SNAPSHOT_MAX_BYTES)throw Error('Offline snapshot exceeds 20 MB; keep draft-only mode or reduce stored records');
  const box=await seal(v.key,snapshot,'snapshot:'+v.owner);
  if(unlocked!==v)return;await put({...meta,box});if(unlocked===v){v.snapshot=snapshot;await pruneFiles(v);await enrollLogin(state);}
@@ -149,5 +150,4 @@ export async function queueDraft(owner,payload,requestId=crypto.randomUUID()){
 }
 export async function listDrafts(owner){const v=unlocked;if(!v||v.owner!==owner)return [];const rows=(await all()).filter(r=>r.owner===owner&&r.id.startsWith('draft:'));const result=[];for(const row of rows){result.push({...await unseal(v.key,row.box,row.id),id:row.id});}if(unlocked!==v)throw Error('Session changed');return result;}
 export async function markDraftError(owner,id,error,conflicts=[]){const v=unlocked;if(!v||v.owner!==owner)return;const row=await get(id);if(!row||row.owner!==owner)return;const data=await unseal(v.key,row.box,id);const box=await seal(v.key,{...data,error:String(error).slice(0,100),conflicts:conflicts.map(k=>String(k).slice(0,100)).slice(0,100)},id);if(unlocked===v)await put({...row,box});}
-export async function replaceDraft(owner,id,payload){const v=unlocked;if(!v||v.owner!==owner||!draftAllowed(v.snapshot,payload))throw Error('Offline draft not permitted');const row=await get(id);if(!row||row.owner!==owner)throw Error('missing');const d=await unseal(v.key,row.box,id);if(d.payload.id||d.payload.intent||payload.id||d.payload.kind!==payload.kind)throw Error('Only unsynced new drafts can be edited');if(d.error==='offline')throw Error('Retry sync first: server receipt may already exist');const next={...d,payload,error:undefined,conflicts:[]};const box=await seal(v.key,next,id);if(unlocked!==v)throw Error('Session changed');await put({...row,box});}
 export async function deleteDraft(owner,id){if(!vaultUnlocked(owner)||!id.startsWith('draft:'+owner+':'))throw Error('forbidden');await drop(id);}
