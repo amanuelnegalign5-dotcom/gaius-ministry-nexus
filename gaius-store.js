@@ -46,7 +46,7 @@ const tokenKey='gaius.v10.session:'+ (api||'local');
 export function hasSession(){return !!(sessionStorage.getItem(tokenKey)||(!shared&&sessionStorage.me));}
 let stateCache=null,stateFlight=null,stateGeneration=0;
 function invalidateState(){stateGeneration++;stateCache=null;stateFlight=null;}
-export function clearSession(){invalidateState();sessionStorage.removeItem('gaius.v11.offlineIdentity');localStorage.removeItem('gaius.offline.device');sessionStorage.removeItem(tokenKey);if(!shared)sessionStorage.removeItem('me');}
+export function clearSession(){invalidateState();sessionStorage.removeItem('gaius.offline.localSession');sessionStorage.removeItem('gaius.v11.offlineIdentity');localStorage.removeItem('gaius.offline.device');sessionStorage.removeItem(tokenKey);if(!shared)sessionStorage.removeItem('me');}
 async function call(route,data={}){
   const token=sessionStorage.getItem(tokenKey);
   if(!shared)return handle(local,route,data,{local:true,token,legacyId:sessionStorage.me});
