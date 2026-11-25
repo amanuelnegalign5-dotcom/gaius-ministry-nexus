@@ -1,3 +1,4 @@
+import {isCenterRole,isCenterLeaderRole} from './gaius-report-policy.js';
 import * as store from './gaius-store.js';
 import {V11_KINDS, V11_KINDS_LIST,HQ_UNITS,CENTER_UNITS,FOCUS,TEACHING_UNITS,NEXUS_DEPARTMENT_FIELDS} from './gaius-v11-model.js';
 import {visitCompliance,indicators,safePerformance,compatiblePlannedActual} from './gaius-nexus-analytics.js';
@@ -55,6 +56,7 @@ async function open(){
   await load();
   if(epoch!==viewEpoch)return; // user signed out or closed while data loaded
   if(directorRole(my().role)&&caps().director)section='director';
+  else if(!state.offlineOnly&&isCenterRole(my().role)&&mine()==='center'){section='records';kind='plans6';}
   else if(section==='director')section='overview';
   active=true;
   app.classList.add('nexus-mode');
@@ -90,7 +92,7 @@ launch.onclick=()=>{
 // any preserved v10 pages. Other roles keep their existing restricted landing pages.
 window.addEventListener('gaius:nexus-session-ready',event=>{
  const identity=event.detail||{};
- if(!directorRole(identity.role)||!identity.id||autoOpenedDirectorId===identity.id)return;
+ if(!(directorRole(identity.role)||isCenterRole(identity.role))||!identity.id||autoOpenedDirectorId===identity.id)return;
  autoOpenedDirectorId=identity.id;
  void open();
 });
@@ -119,7 +121,7 @@ function dashboard(){const all=records().filter(r=>r.kind!=='centers'&&r.kind!==
 }
 function myAvailableKinds(){return (caps().allowedKinds||[]).filter(k=>V11_KINDS[k]);}
 const opts=(values,selected)=>values.map(([v,l])=>`<option value="${escape(v)}" ${String(v)===String(selected)?'selected':''}>${escape(l)}</option>`).join('');
-function userOptions(cur){return opts([['','—'],...(state.directory||[]).map(u=>[u.id,u.name+' · '+(u.department||u.center||u.role)])],cur);}
+function userOptions(cur){return opts([['','—'],...(state.directory||[]).filter(u=>kind!=='centerAttendance'||isCenterLeaderRole(u.role)).map(u=>[u.id,u.name+' · '+(u.department||u.center||u.role)])],cur);}
 function centerOptions(cur){const names=records().filter(r=>r.kind==='centers').map(r=>r.data.name);if(my().center&&!names.includes(my().center))names.push(my().center);return opts([['','—'],...names.map(s=>[s,s])],cur);}
 function field(f,value=''){const [key,am,en,type,required]=f,label=escape(localLang()==='am'?am:en)+(required?' *':'');let control;
  const select=items=>`<select data-field="${key}" ${required?'required':''}>${opts(items,value)}</select>`;
@@ -137,7 +139,7 @@ function field(f,value=''){const [key,am,en,type,required]=f,label=escape(localL
  case 'progressStatus':control=select([['','—'],['not_started',text('አልተጀመረም','Not started')],['in_progress',text('በመካሄድ ላይ','In progress')],['completed',text('ተጠናቋል','Completed')],['blocked',text('ተገድቧል','Blocked')]]);break;
  case 'level':control=select([['','—'],['C','C / ሐ'],['B','B / ለ'],['A','A / ሀ']]);break;
  case 'slot':control=select([['','—'],['1','1'],['2','2']]);break;
- case 'meeting':control=select([['','—'],['sunday','Sunday'],['biweekly','Biweekly'],['special','Special']]);break;
+ case 'meeting':control=select([['','—'],['sunday',text('የእሁድ ዋና ፕሮግራም','Sunday main program')],['meeting',text('ሌላ የማዕከል ስብሰባ','Other center meeting')],['biweekly','Biweekly'],['special','Special']]);break;
  case 'attendance':control=select([['','—'],['present','Present'],['absent','Absent'],['late','Late'],['excused','Excused']]);break;
  case 'board':control=select([['','—'],['board','Board'],['advisory','Advisory Board']]);break;
  case 'manual':control=select([['','—'],['ministry','Ministry manual'],['teaching','Teaching roadmap'],['policy','Policy'],['other','Other']]);break;
@@ -187,7 +189,16 @@ function card(r){const def=V11_KINDS[r.kind]||{},data=r.data||{};const title=dat
 function recordsScreen(){const list=myAvailableKinds(),def=V11_KINDS[kind];if(!list.includes(kind))kind=list[0]||'plans6';
  if(!list.length){frame(`<div class="v11box"><p>${text('ለዚህ ሚና የሥራ መዝገብ ማስገባት አልተፈቀደም።','No record-editing modules are assigned to this role.')}</p></div>`);return;}
  const chosen=records().filter(r=>r.kind===kind&&r.status!=='archived').sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
- frame(`<div class="v11box"><label class="v11field"><span>${text('የሥራ ክፍል ምረጥ','Choose module')}</span><select id="v11Kind">${opts(list.map(x=>[x,text(V11_KINDS[x].am,V11_KINDS[x].en)]),kind)}</select></label><p class="v11guide">${kind==='manuals'?text('የጋይዮስ መመሪያንና የትምህርት ሂደትን በሙሉ ጽሑፍ በዚህ ገጽ ይያዙ። የግል ሰነዶችን በይፋ ወደ GitHub አትጫኑ።','Import the complete manual and teaching roadmap securely here. Do not publish confidential source documents in GitHub.'):text('በአማርኛና English የሚሠራ የተዋቀረ መዝገብ።','Structured bilingual records.')}</p></div>${formHTML(editing)}<div class="v11box"><h2>${text('የተፈቀዱ መዝገቦች','Visible records')} (${chosen.length})</h2>${chosen.map(card).join('')||'<p class="v11muted">'+text('ገና መዝገብ የለም','No records yet')+'</p>'}</div>${kind==='monthly'&&caps().director?legacyReports():''}`);
+ const centers=new Map(),other=[];
+ for(const r of chosen){
+  if(r.scopeType!=='center'){other.push(r);continue;}
+  if(!centers.has(r.scopeId))centers.set(r.scopeId,[]);
+  centers.get(r.scopeId).push(r);
+ }
+ const personalAttendance=isCenterLeaderRole(my().role)&&my().role!=='center_leader'?records().filter(r=>r.kind==='centerAttendance'&&r.data?.participantId===my().id&&r.status!=='archived'):[];
+ const attendancePanel=personalAttendance.length?`<section class="v11box"><h2>${text('የእኔ የማዕከል መገኘት','My center attendance')}</h2>${personalAttendance.map(card).join('')}</section>`:'';
+ const grouped=['monthly','plans6'].includes(kind)?[...centers].sort(([a],[b])=>a.localeCompare(b)).map(([name,rows])=>`<h3>${escape(name)}</h3>${rows.map(card).join('')}`).join('')+other.map(card).join(''):chosen.map(card).join('');
+ frame(`<div class="v11box"><label class="v11field"><span>${text('የሥራ ክፍል ምረጥ','Choose module')}</span><select id="v11Kind">${opts(list.map(x=>[x,text(V11_KINDS[x].am,V11_KINDS[x].en)]),kind)}</select></label><p class="v11guide">${kind==='manuals'?text('የጋይዮስ መመሪያንና የትምህርት ሂደትን በሙሉ ጽሑፍ በዚህ ገጽ ይያዙ። የግል ሰነዶችን በይፋ ወደ GitHub አትጫኑ።','Import the complete manual and teaching roadmap securely here. Do not publish confidential source documents in GitHub.'):text('በአማርኛና English የሚሠራ የተዋቀረ መዝገብ።','Structured bilingual records.')}</p></div>${formHTML(editing)}${attendancePanel}<div class="v11box"><h2>${text('የተፈቀዱ መዝገቦች','Visible records')} (${chosen.length})</h2>${grouped||'<p class="v11muted">'+text('ገና መዝገብ የለም','No records yet')+'</p>'}</div>${kind==='monthly'&&caps().director?legacyReports():''}`);
 }
 function legacyReports(){const items=window.GAIUS_V10?.originals||[];return `<div class="v11box"><h2>${text('የv10 የጥቅምት ስድስት ኦሪጅናል ሪፖርቶች','Six preserved v10 October source reports')}</h2><p class="v11guide">${text('ይህ የታሪካዊ ጽሑፍ ነው፤ አዲስ ሪፖርት አይደለም።','Historical originals, not newly submitted reports.')}</p>${items.map((r,i)=>`<article class="v11record"><h3>${escape(localLang()==='am'?r.amTitle:r.enTitle)}</h3><details><summary>${text('ይዘት አሳይ','Show content')}</summary><pre class="v11body">${escape(localLang()==='am'?r.am:r.en)}</pre></details><button type="button" data-v="legacy-export" data-legacy="${i}" data-as="docx">Word</button> <button type="button" data-v="legacy-export" data-legacy="${i}" data-as="pdf">PDF</button></article>`).join('')}</div>`;}
 // Accessible native file inputs remain directly tappable on iPhone and desktop.
@@ -422,3 +433,4 @@ root.addEventListener('click',e=>{const b=e.target.closest('[data-v]');if(!b)ret
   }
  if(op==='download'){const file=state.v11.files.find(f=>f.id===id);const blob=await store.downloadFile(id);saveDownload(blob,file?.name||'GAIUS-file');return;}
  });});
+
