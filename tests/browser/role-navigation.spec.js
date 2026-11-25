@@ -91,3 +91,25 @@ test('center user help lists only authorized navigation and guides center attend
  await expect(page.locator('#nexusHelp')).not.toContainText('Monday attendance');
  await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
 });
+
+test('center profile retains direct center work links after returning from Nexus',async({page})=>{
+ await enter(page,'center_leader','Gerji');
+ const nav=page.locator('#centerWorkspaceNav');
+ await expect(nav).toBeVisible();
+ await expect(nav).not.toContainText(/Monday attendance|HQ reports/i);
+ await expect(nav.locator('[data-center-shortcut="plans6"]')).toBeVisible();
+ await expect(nav.locator('[data-center-shortcut="monthly"]')).toBeVisible();
+ await nav.locator('[data-center-shortcut="centerAttendance"]').click();
+ await expect(page.locator('#v11Kind')).toHaveValue('centerAttendance');
+ await page.locator('#gaiusV11 [data-v="close"]').click();
+ await expect(nav.locator('[data-center-shortcut="monthly"]')).toBeVisible();
+ await nav.locator('[data-center-shortcut="monthly"]').click();
+ await expect(page.locator('#v11Kind')).toHaveValue('monthly');
+});
+test('unassigned center account sees assignment warning rather than an unexplained profile-only page',async({page})=>{
+ await enter(page,'center_leader','');
+ const nav=page.locator('#centerWorkspaceNav');
+ await expect(nav).toContainText('No center is assigned');
+ await expect(nav.locator('[data-center-shortcut="centerAttendance"]')).toHaveCount(0);
+ await expect(nav.locator('[data-center-shortcut="overview"]')).toBeVisible();
+});

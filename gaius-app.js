@@ -249,7 +249,7 @@ function notification(key,isError=false){
 }
 function forgetEdits(){editReport=editPlan=editProfile=null;for(const k of Object.keys(edits))delete edits[k];}
 function signedOut(){
- view=null;window.GAIUS_ACTIVE_IDENTITY=null;syncMondayAccess();forgetEdits();store.clearSession();vis('app',false);vis('auth',true);vis('feedback',false);
+ view=null;window.GAIUS_ACTIVE_IDENTITY=null;window.GAIUS_NAV_CONTEXT=null;syncMondayAccess();forgetEdits();store.clearSession();vis('app',false);vis('auth',true);vis('feedback',false);
  window.dispatchEvent(new Event('gaius:nexus-session-cleared'));
  // Clear rendered private content and fields before another account uses the same tab.
  for(const id of ['adminUsers','auditList','queue','reportList','recent','planList','docList','peopleList','profileFields','attendanceList','annList','projectList'])$(id).replaceChildren();
@@ -266,6 +266,8 @@ async function refresh(){
  const first=!view||view.onboarding||view.me?.id!==next.me?.id||view.me?.role!==next.me?.role;view=next;syncMondayAccess();
  if(first){vis('auth',false);vis('app',true);forgetEdits();defaults();tab=seesReports(current())?'dashboard':isMondayParticipant(current())?'attendance':'profilePage';}
  renderAll();
+ window.GAIUS_NAV_CONTEXT={me:{id:next.me.id,role:next.me.role,center:next.me.center},capabilities:next.v11?.capabilities||{},shared:store.shared};
+ window.dispatchEvent(new CustomEvent('gaius:nexus-state-refreshed'));
  // UI-only notification: no credentials or organizational data leave the browser.
  const identity={id:next.me?.id,role:next.me?.role};
  window.GAIUS_ACTIVE_IDENTITY=identity;
@@ -774,7 +776,7 @@ $('userSearch').oninput=renderAdmin;$('userFilter').onchange=renderAdmin;
 function renderAll(){
  const u=current();syncMondayAccess();if(!u||view.onboarding)return;
  navigate(tab,false);
- $('who').textContent=u.name+' · '+role(u.role)+(full(u)?' · '+t('fullAdmin'):'');$('miniPhoto').src=photo(u.photo);
+ $('who').textContent=u.name+' · '+role(u.role)+(u.center?' · '+u.center:'')+(full(u)?' · '+t('fullAdmin'):'');$('miniPhoto').src=photo(u.photo);
  selectOptions('reportStatus',reportOptions(),'submitted');
  renderDashboard();renderReports();renderPlans();if(isMondayParticipant(u))renderAttendance();else{for(const id of ['attendanceList','attendanceSummary','batchRows'])$(id).replaceChildren();}renderCatalogs();renderPeople();renderAdmin();navigate(tab,false);
 }
