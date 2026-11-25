@@ -36,6 +36,7 @@ jobs:
           node --check gaius-v11-ui.js
           node --check gaius-governance-service.js
           node --check gaius-governance-ui.js
+          node --check gaius-worker.js
 
   deploy-backend:
     needs: verify

@@ -4,7 +4,7 @@ import {V11_KINDS, V11_KINDS_LIST,HQ_UNITS,CENTER_UNITS,FOCUS,TEACHING_UNITS,NEX
 import {visitCompliance,indicators,safePerformance,compatiblePlannedActual} from './gaius-nexus-analytics.js';
 import {makeDocx,makePdf,saveDownload} from './gaius-v11-export.js';
 // New v11 module coexists with v10.3: old screens, reports and workflows remain intact.
-const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&quot;'}[c]));
+const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const $=id=>document.getElementById(id);
 const localLang=()=>localStorage.gLang==='en'?'en':'am';
 const text=(am,en)=>localLang()==='am'?am:en;

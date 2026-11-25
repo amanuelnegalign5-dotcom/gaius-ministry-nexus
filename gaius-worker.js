@@ -19,8 +19,8 @@ class SqlRecords {
   drop(bucket,id){this.sql.exec('DELETE FROM records WHERE bucket=? AND id=?',bucket,id);}
   eraseAttempts(hashes){
     if(!hashes)return;
-    this.sql.exec('DELETE FROM attempts WHERE key IN (?, ?)',
-      'login-user:'+hashes.username,'recovery-address:'+hashes.email);
+    this.sql.exec('DELETE FROM attempts WHERE key IN (?, ?) OR key LIKE ?',
+      'login-user:'+hashes.username,'recovery-address:'+hashes.email,'login-user-ip:'+hashes.username+':%');
   }
   atomic(fn){return this.storage.transactionSync(fn);}
   limit(key,max,windowMs=600000){
@@ -54,8 +54,14 @@ export class MinistryWorkspace {
       if(!data||Array.isArray(data)||typeof data!=='object')throw new AppError('unknown',400);
       const token=(request.headers.get('Authorization')||'').replace(/^Bearer /,'');
       if(route==='info')return json({...(await handle(this.db,route,data,{token})),emailRecovery:recoveryReady(this.env)});
-      if(route==='login' && typeof data.username==='string')
-        this.db.limit('login-user:'+await digest(data.username.trim().toLowerCase()),20,600000);
+      if(route==='login' && typeof data.username==='string'){
+        // A single attacker must not be able to lock a real user out: the tight limit is per
+        // username AND source address; the per-username ceiling only stops wide distributed guessing.
+        const userHash=await digest(data.username.trim().toLowerCase());
+        const ipHash=await digest(request.headers.get('CF-Connecting-IP')||'unavailable');
+        this.db.limit('login-user-ip:'+userHash+':'+ipHash,10,600000);
+        this.db.limit('login-user:'+userHash,100,600000);
+      }
       if(route==='password/request' || route==='email/request'){
         this.recovery.requireEnabled();
         if(route==='password/request'){
@@ -169,11 +175,13 @@ export class MinistryWorkspace {
     if(type==='image/jpeg'&&!starts(255,216,255))throw new AppError('fileInvalid',415);
     if(type==='image/webp'&&!(starts(82,73,70,70)&&String.fromCharCode(...first.slice(8,12))==='WEBP'))throw new AppError('fileInvalid',415);
     if(type==='video/mp4'&&String.fromCharCode(...first.slice(4,8))!=='ftyp')throw new AppError('fileInvalid',415);
+    if(['text/plain','text/csv'].includes(type)&&new Uint8Array(bytes.slice(0,8192)).includes(0))throw new AppError('fileInvalid',415);
     const id=crypto.randomUUID(),key='private/'+id;
     await this.media.put(key,bytes,{httpMetadata:{contentType:type}});
     const record={id,key,name,type,size:bytes.byteLength,scopeType,scopeId,ownerId:user.id,
       allowedUserIds:[],status:'pending',createdAt:new Date().toISOString()};
-    await this.db.atomic(()=>this.db.put('v11_files',record));
+    try{await this.db.atomic(()=>this.db.put('v11_files',record));}
+    catch(e){try{await this.media.delete(key);}catch{}throw e;}
     return json({id,status:'pending'});
   }
   async download(request){
