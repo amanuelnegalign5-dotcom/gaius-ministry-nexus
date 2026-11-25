@@ -68,7 +68,8 @@ export async function state({reuse=false}={}){
  const generation=stateGeneration;
  const promise=call('state').then(value=>{
   const current=sessionStorage.getItem(tokenKey)||(!shared?sessionStorage.me:'');
-  if(current!==identity||generation!==stateGeneration)throw new AppError('expired',401);
+  if(current!==identity)throw new AppError('expired',401);
+  if(generation!==stateGeneration)return state();
   stateCache={identity,at:Date.now(),value};return value;
  }).finally(()=>{if(stateFlight?.promise===promise)stateFlight=null;});
  stateFlight={identity,promise};return promise;
@@ -78,10 +79,11 @@ export const requestDirectorCode=(role,email,setupKey)=>{if(!shared)throw new Ap
 export async function login(d){invalidateState();const {token}=await call('login',d);sessionStorage.setItem(tokenKey,token);if(!shared)sessionStorage.removeItem('me');}
 export async function logout(){try{await call('logout');}finally{clearSession();}}
 export async function command(action,payload){
-  if(!['governance.list','governance.photo'].includes(action))invalidateState();
+  const mutating=!['governance.list','governance.photo'].includes(action);if(mutating)invalidateState();
   const data={action,payload,requestId:crypto.randomUUID()};
-  try{return await call('command',data);}
-  catch(e){if(shared&&e.message==='offline'&&navigator.onLine)return call('command',data);throw e;}
+  try{try{return await call('command',data);}
+  catch(e){if(shared&&e.message==='offline'&&navigator.onLine)return await call('command',data);throw e;}}
+  finally{if(mutating)invalidateState();}
 }
 
 // Email recovery requires the shared, server-side mail service. Never generate
