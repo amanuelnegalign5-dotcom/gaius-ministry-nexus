@@ -35,7 +35,9 @@ export function roleClass(u){
 }
 // Any active, onboarded account except a Director can receive a Director grant. What the grant may contain
 // (and where it applies) is classified by role in classifiedGrantOptions() and enforced again at read time.
-export const eligibleDelegate=u=>!!u?.id&&(u.accountStatus||'active')==='active'&&!u.onboarding&&roleClass(u)!=='director';
+export const eligibleGrantRecipient=u=>!!u?.id&&(u.accountStatus||'active')==='active'&&!u.onboarding&&['hq_leader','staff','center'].includes(roleClass(u))&&(roleClass(u)!=='center'||!!String(u.center||'').trim());
+export const eligibleDelegate=u=>eligibleGrantRecipient(u)&&['hq_leader','staff'].includes(roleClass(u));
+export const grantTypesFor=u=>eligibleDelegate(u)?['permission','delegation']:eligibleGrantRecipient(u)?['permission']:[];
 const hqLegacy=['reports','review_reports','review_plans','comments','attendance','announcements','projects','documents','manage_users','v11:oversight','v11:approve','v11:publish','v11:teaching','v11:edit_manual','v11:upload_file'];
 const staffLegacy=['attendance','announcements','projects','documents','v11:publish','v11:teaching','v11:upload_file'];
 export const CENTER_PERMISSION_KEYS=Object.freeze(['center:attendance','center:lijoch','center:mentorship','center:review_reports','center:review_plans','center:submit_reports','center:submit_plans','center:upload_files']);
@@ -59,7 +61,7 @@ const governanceModules=['center_registry','member_registry','community_projects
 const CENTER_GRANT_MODULES=['center_registry','center_plans','center_reports','center_attendance','documents','teaching'];
 const CENTER_LEAD_ROLES=['center_senior_leader','center_leader','center_department_leader'];
 export function classifiedGrantOptions(u){
- if(!eligibleDelegate(u))return {modules:[],actions:[]};
+ if(!eligibleGrantRecipient(u))return {modules:[],actions:[]};
  // Center accounts: own-center modules only (never HQ plans/reports, Monday attendance, director visits, succession
  // or the advisory board). Center leaders may also receive review authority; potential leaders and volunteers may not.
  if(roleClass(u)==='center'){
