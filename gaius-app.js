@@ -736,7 +736,7 @@ function renderAdmin(){
   ${userAccessEditor(u)}${full(me)?permanentDeleteEditor(u):''}${manage&&status==='active'&&me.id!==u.id?`<details><summary>${h(t('resetPassword'))}</summary><label>${h(t('tempPassword'))}<input data-reset type="password" autocomplete="new-password"></label>${button('reset','save')}</details>`:''}</article>`;
  }).join('')||empty();
  selectOptions('successorUser',[]);$('transferAdmin').closest('.card').classList.add('hide');
- vis('exportData',full(me));document.querySelectorAll('.fullAdminOnly').forEach(el=>vis(el,full(me)));
+ vis('exportData',full(me));document.querySelectorAll('.fullAdminOnly').forEach(el=>vis(el,full(me)));vis($('transferAdmin').closest('.card'),false);
  if(full(me)){
   const queue=[...reports().map(r=>['report',r]),...view.plans.map(r=>['plan',r])].filter(([k,r])=>['submitted','under_review'].includes(flow(r,reviewOf(k,r.id))));
   $('queue').innerHTML=queue.map(([k,r])=>recordCard(k,r,true)).join('')||empty();
