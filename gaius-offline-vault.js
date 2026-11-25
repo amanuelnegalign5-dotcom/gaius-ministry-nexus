@@ -2,6 +2,9 @@ import {validCenterAttendance} from './gaius-report-policy.js';
 // Passphrase-protected offline vault. Never persist server tokens, credentials, attachments or full server state.
 export const OFFLINE_KINDS=['monthly','plans6','initiatives','tasks','teaching','updates','centerAttendance'];
 export const EXTENDED_KINDS=['centers','centerUnits','monthly','plans6','followups','centerAttendance','teaching','documents','committees','initiatives','tasks','updates','directorGoals','visits','advisoryMeetings','succession'];
+export const OFFLINE_FILE_MAX_BYTES=5*1024*1024;
+export const OFFLINE_FILES_TOTAL_BYTES=30*1024*1024;
+const offlineFileSafe=f=>f?.offlineAllowed===true&&f.status==='approved'&&f.scopeType==='organization'&&f.scopeId==='org'&&['application/pdf','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.openxmlformats-officedocument.presentationml.presentation','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/plain','text/csv'].includes(f.type)&&f.size>0&&f.size<=OFFLINE_FILE_MAX_BYTES;
 const RESTRICTED_KINDS=new Set(['centerAttendance','succession','advisoryMeetings','visits','directorGoals','documents','committees','centerUnits']);
 const categoryFor=k=>RESTRICTED_KINDS.has(k)||k==='mondayAttendance'?'attendance':'operations';
 const TRANSITIONS={submit:'submit',approve:'approve',revision_requested:'requestChanges',revise:'revise',archive:'archive'};
@@ -13,6 +16,23 @@ const recordProjection=r=>{
  return {id:r.id,kind:r.kind,scopeType:r.scopeType,scopeId:r.scopeId,ownerId:r.ownerId,ownerName:r.ownerName,status:r.status,_v:r._v,createdAt:r.createdAt,updatedAt:r.updatedAt,data,actions:{...Object.fromEntries(Object.keys(TRANSITIONS).map(k=>[TRANSITIONS[k],r.actions?.[TRANSITIONS[k]]===true])),edit},...(r.kind==='directorGoals'&&r.sourceSnapshot?{sourceSnapshot:{budget:r.sourceSnapshot.budget}}:{})};
 };
 export const MAX_AGE=24*60*60*1000;
+export const SNAPSHOT_MAX_BYTES=20*1024*1024;
+const sameValue=(a,b)=>String(a??'')===String(b??'');
+// Only scalar field-level changes on the same authorized editable record may merge.
+// A changed attachment, scope, status or overlapping field always requires review.
+export function mergeOfflineEdit(draft,live){
+ const p=draft?.payload,base=draft?.base;if(!p?.id||p.intent||!base||!live?.actions?.edit||live.id!==p.id||live.kind!==p.kind||live._v===p.version||base._v!==p.version||live.scopeType!==p.scopeType||live.scopeId!==p.scopeId||live.status!==base.status||live.data?.fileId||live.data?.photoFileId||p.kind==='centerAttendance'||p.kind==='mondayAttendance')return null;
+ const out={...live.data},conflicts=[];
+ for(const k of new Set([...Object.keys(base.data||{}),...Object.keys(p.data||{})])){
+  if(!Object.hasOwn(p.data||{},k))continue;
+  const a=base.data?.[k],b=p.data[k],c=live.data?.[k];
+  if([a,b,c].some(v=>v!==null&&typeof v==='object'))return null;
+  if(sameValue(a,b))continue;
+  if(!sameValue(a,c)&&!sameValue(b,c)){conflicts.push(k);continue;}
+  out[k]=b;
+ }
+ return conflicts.length?{conflicts}:{payload:{...p,version:live._v,data:out}};
+}
 const encoder=new TextEncoder(), decoder=new TextDecoder();
 const bytes=n=>crypto.getRandomValues(new Uint8Array(n));
 export async function deriveKey(passphrase,salt){
@@ -22,7 +42,7 @@ export async function deriveKey(passphrase,salt){
 }
 export async function seal(key,value,aad){
  const iv=bytes(12),cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:encoder.encode(aad)},key,encoder.encode(JSON.stringify(value)));
- return {iv:Array.from(iv),cipher:Array.from(new Uint8Array(cipher))};
+ return {iv,cipher:new Uint8Array(cipher)};
 }
 export async function unseal(key,box,aad){
  const data=await crypto.subtle.decrypt({name:'AES-GCM',iv:new Uint8Array(box.iv),additionalData:encoder.encode(aad)},key,new Uint8Array(box.cipher));
@@ -36,7 +56,7 @@ export function offlineSnapshot(state,at=Date.now(),extended=false){
  const lease=state.authorization?.offlineLease;
  const issued=lease?.issuedAt??at;
  const deadline=key=>Number.isFinite(lease?.[key])?Math.min(lease[key],issued+30*MAX_AGE):issued+MAX_AGE;
- const extra=extended?{extended:true,records:(state.v11?.records||[]).filter(r=>recordSafe(r)&&deadline(categoryFor(r.kind)+'Until')>issued).map(recordProjection),readableKinds:(c.readableKinds||c.allowedKinds||[]).filter(k=>EXTENDED_KINDS.includes(k)),onlineKinds:(c.readableKinds||c.allowedKinds||[]).filter(k=>!EXTENDED_KINDS.includes(k)),directory:(deadline('attendanceUntil')>issued?state.directory||[]:[]).map(({id,name,role,center,department})=>({id,name,role,center,department})),nav:{director:c.director===true,oversight:c.oversight===true,files:c.canUploadFile===true||!!state.v11?.files?.length,governance:!!(c.director||c.hqReports||me.center||me.role==='staff'||me.role==='hq_staff'),legacyPages:state.authorization?.legacyPages||[]},defaultScopeType:c.defaultScopeType,defaultScopeId:c.defaultScopeId,mondayRecords:(deadline('attendanceUntil')>issued?state.attendance||[]:[]).filter(r=>!r.note&&(r.programType||'regular')==='regular').map(({id,personId,date,status,programType,_v})=>({id,personId,date,status,programType:programType||'regular',_v})),legacy:{reports:(state.reports||[]).filter(r=>!/counsel|ምክር/i.test(r.department||'')).map(({id,title,month,department,status,activity,planned,achieved,result,challenge,next,updatedAt})=>({id,title,month,department,status,activity,planned,achieved,result,challenge,next,updatedAt})),plans:(state.plans||[]).map(({id,title,month,department,status,objective,activities,expected,due,updatedAt})=>({id,title,month,department,status,objective,activities,expected,due,updatedAt}))}}:{};
+ const extra=extended?{extended:true,offlineFiles:deadline('attendanceUntil')>issued?(state.v11?.files||[]).filter(offlineFileSafe).map(({id,name,type,size,updatedAt,createdAt})=>({id,name,type,size,version:updatedAt||createdAt})):[],records:(state.v11?.records||[]).filter(r=>recordSafe(r)&&deadline(categoryFor(r.kind)+'Until')>issued).map(recordProjection),readableKinds:(c.readableKinds||c.allowedKinds||[]).filter(k=>EXTENDED_KINDS.includes(k)),onlineKinds:(c.readableKinds||c.allowedKinds||[]).filter(k=>!EXTENDED_KINDS.includes(k)),directory:(deadline('attendanceUntil')>issued?state.directory||[]:[]).map(({id,name,role,center,department})=>({id,name,role,center,department})),nav:{director:c.director===true,oversight:c.oversight===true,files:c.canUploadFile===true||!!state.v11?.files?.length,governance:!!(c.director||c.hqReports||me.center||me.role==='staff'||me.role==='hq_staff'),legacyPages:state.authorization?.legacyPages||[]},defaultScopeType:c.defaultScopeType,defaultScopeId:c.defaultScopeId,mondayRecords:(deadline('attendanceUntil')>issued?state.attendance||[]:[]).filter(r=>!r.note&&(r.programType||'regular')==='regular').map(({id,personId,date,status,programType,_v})=>({id,personId,date,status,programType:programType||'regular',_v})),legacy:{reports:(state.reports||[]).filter(r=>!/counsel|ምክር/i.test(r.department||'')).map(({id,title,month,department,status,activity,planned,achieved,result,challenge,next,updatedAt})=>({id,title,month,department,status,activity,planned,achieved,result,challenge,next,updatedAt})),plans:(state.plans||[]).map(({id,title,month,department,status,objective,activities,expected,due,updatedAt})=>({id,title,month,department,status,objective,activities,expected,due,updatedAt}))}}:{};
  return {...extra,at:issued,operationsUntil:deadline('operationsUntil'),attendanceUntil:deadline('attendanceUntil'),mondayRoster:deadline('attendanceUntil')>issued?state.authorization?.offlineMondayRoster||[]:[],me:{id:me.id,role:me.role,name:me.name,department:me.department,center:me.center},createScopes,participants:deadline('attendanceUntil')>issued?participants:[]};
 }
 export function categoryValid(s,owner,category,now=Date.now()){const end=s?.[category+'Until']??((s?.at||0)+MAX_AGE);return !!s?.me&&s.me.id===owner&&Number.isFinite(s.at)&&s.at<=now&&Number.isFinite(end)&&now<end&&end<=s.at+30*MAX_AGE;}
@@ -94,19 +114,27 @@ export async function unlockVault(owner,passphrase,onlineState=null){
 export async function refreshVault(state){
  const v=unlocked;if(!v||v.owner!==state.me.id)return;
  const meta=await get('meta:'+v.owner),snapshot=offlineSnapshot(state,Date.now(),v.snapshot.extended===true);
- if(encoder.encode(JSON.stringify(snapshot)).length>5*1024*1024)throw Error('Offline snapshot exceeds 5 MB; use draft-only mode');
+ if(snapshot.at===v.snapshot.at&&JSON.stringify(snapshot)===JSON.stringify(v.snapshot))return;
+ if(encoder.encode(JSON.stringify(snapshot)).length>SNAPSHOT_MAX_BYTES)throw Error('Offline snapshot exceeds 20 MB; keep draft-only mode or reduce stored records');
  const box=await seal(v.key,snapshot,'snapshot:'+v.owner);
- if(unlocked!==v)return;await put({...meta,box});if(unlocked===v){v.snapshot=snapshot;await enrollLogin(state);}
+ if(unlocked!==v)return;await put({...meta,box});if(unlocked===v){v.snapshot=snapshot;await pruneFiles(v);await enrollLogin(state);}
 }
-export async function setExtendedWorkspace(state,enabled){const v=unlocked;if(!v||v.owner!==state.me.id)throw Error('Unlock offline vault first');const snapshot=offlineSnapshot(state,Date.now(),enabled);if(encoder.encode(JSON.stringify(snapshot)).length>5*1024*1024)throw Error('Offline snapshot exceeds 5 MB; use draft-only mode');const meta=await get('meta:'+v.owner),box=await seal(v.key,snapshot,'snapshot:'+v.owner);if(unlocked!==v)throw Error('Session changed');await put({...meta,box});if(unlocked===v)v.snapshot=snapshot;}
+export async function setExtendedWorkspace(state,enabled){const v=unlocked;if(!v||v.owner!==state.me.id)throw Error('Unlock offline vault first');const snapshot=offlineSnapshot(state,Date.now(),enabled);if(encoder.encode(JSON.stringify(snapshot)).length>SNAPSHOT_MAX_BYTES)throw Error('Offline snapshot exceeds 20 MB; keep draft-only mode or reduce stored records');const meta=await get('meta:'+v.owner),box=await seal(v.key,snapshot,'snapshot:'+v.owner);if(unlocked!==v)throw Error('Session changed');await put({...meta,box});if(unlocked===v){v.snapshot=snapshot;await pruneFiles(v);}}
 export function offlineState(owner){
  const v=unlocked;if(!v||v.owner!==owner||!snapshotValid(v.snapshot,owner))return null;
  const s=v.snapshot,operations=categoryValid(s,owner,'operations'),attendance=categoryValid(s,owner,'attendance');
  const createScopes=Object.fromEntries(Object.entries(s.createScopes).filter(([k])=>categoryValid(s,owner,categoryFor(k))));
  const records=(s.records||[]).filter(r=>categoryValid(s,owner,categoryFor(r.kind)));
  const readableKinds=[...new Set([...Object.keys(createScopes),...records.map(r=>r.kind),...(s.readableKinds||[]).filter(k=>categoryValid(s,owner,categoryFor(k)))])];
- return {me:s.me,directory:attendance?s.directory||[]:[],offlineOnly:true,extended:s.extended===true,snapshotAt:s.at,onlineKinds:s.onlineKinds||[],offlineNav:s.nav||{},legacy:operations?s.legacy||{}:{},mondayRecords:attendance?s.mondayRecords||[]:[],v11:{records,files:[],capabilities:{director:!!s.nav?.director,oversight:!!s.nav?.oversight,defaultScopeType:s.defaultScopeType,defaultScopeId:s.defaultScopeId,createScopes,allowedKinds:Object.keys(createScopes),readableKinds,attendanceParticipants:attendance?s.participants:[],offlineMondayRoster:attendance?s.mondayRoster||[]:[]}}};
+ return {me:s.me,directory:attendance?s.directory||[]:[],offlineOnly:true,extended:s.extended===true,snapshotAt:s.at,onlineKinds:s.onlineKinds||[],offlineNav:s.nav||{},offlineFiles:attendance?s.offlineFiles||[]:[],legacy:operations?s.legacy||{}:{},mondayRecords:attendance?s.mondayRecords||[]:[],v11:{records,files:[],capabilities:{director:!!s.nav?.director,oversight:!!s.nav?.oversight,defaultScopeType:s.defaultScopeType,defaultScopeId:s.defaultScopeId,createScopes,allowedKinds:Object.keys(createScopes),readableKinds,attendanceParticipants:attendance?s.participants:[],offlineMondayRoster:attendance?s.mondayRoster||[]:[]}}};
 }
+async function fileRows(owner){return (await all()).filter(r=>r.owner===owner&&r.id.startsWith('file:'));}
+const fileKey=(owner,id)=>'file:'+owner+':'+id;
+async function pruneFiles(v){const allowed=new Map((v.snapshot.offlineFiles||[]).map(f=>[f.id,f.version]));for(const r of await fileRows(v.owner)){if(unlocked!==v)return;if(!allowed.has(r.fileId)||allowed.get(r.fileId)!==r.version)await drop(r.id);}}
+export async function cachedFiles(owner){const v=unlocked;if(!v||v.owner!==owner||!categoryValid(v.snapshot,owner,'attendance'))return [];const rows=await fileRows(owner);if(unlocked!==v)return [];return (v.snapshot.offlineFiles||[]).filter(f=>rows.some(r=>r.fileId===f.id&&r.version===f.version));}
+export async function cacheFile(owner,id,blob){const v=unlocked;if(!v||v.owner!==owner||!v.snapshot.extended||!categoryValid(v.snapshot,owner,'attendance'))throw Error('Enable extended offline workspace first');const f=v.snapshot.offlineFiles?.find(f=>f.id===id);if(!f||f.size!==blob.size||blob.size>OFFLINE_FILE_MAX_BYTES)throw Error('offlineFileNotEligible');const rows=await fileRows(owner);if(rows.filter(r=>r.fileId!==id).reduce((n,r)=>n+r.size,0)+blob.size>OFFLINE_FILES_TOTAL_BYTES)throw Error('Offline files exceed 30 MB; remove a local copy first');const key=fileKey(owner,id),iv=bytes(12),cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:encoder.encode(key+':'+f.version)},v.key,await blob.arrayBuffer());if(unlocked!==v||!categoryValid(v.snapshot,owner,'attendance')||!v.snapshot.offlineFiles?.some(x=>x.id===id&&x.version===f.version))throw Error('Session or file access changed');await put({id:key,owner,fileId:id,version:f.version,size:blob.size,iv,cipher:new Uint8Array(cipher)});}
+export async function readCachedFile(owner,id){const v=unlocked;if(!v||v.owner!==owner||!categoryValid(v.snapshot,owner,'attendance'))throw Error('Offline file access expired');const f=v.snapshot.offlineFiles?.find(f=>f.id===id),r=await get(fileKey(owner,id));if(!f||!r||r.version!==f.version)throw Error('Offline file not saved');const bytes=await crypto.subtle.decrypt({name:'AES-GCM',iv:new Uint8Array(r.iv),additionalData:encoder.encode(r.id+':'+f.version)},v.key,new Uint8Array(r.cipher));if(unlocked!==v||!categoryValid(v.snapshot,owner,'attendance')||!v.snapshot.offlineFiles?.some(x=>x.id===id&&x.version===f.version))throw Error('Session or file access changed');return {name:f.name,blob:new Blob([bytes],{type:f.type})};}
+export async function removeCachedFile(owner,id){if(!vaultUnlocked(owner))throw Error('forbidden');await drop(fileKey(owner,id));}
 export function extendedEnabled(owner){return unlocked?.owner===owner&&unlocked.snapshot.extended===true;}
 
 export function vaultLease(owner){const v=unlocked;if(v?.owner!==owner)return null;const s=v.snapshot;return {operationsUntil:s.operationsUntil??s.at+MAX_AGE,attendanceUntil:s.attendanceUntil??s.at+MAX_AGE};}
@@ -116,9 +144,10 @@ export async function queueDraft(owner,payload,requestId=crypto.randomUUID()){
  const id='draft:'+owner+':'+requestId;
  const existing=await get(id);if(existing)return;
  if(payload.id&&(await listDrafts(owner)).some(d=>d.payload.id===payload.id))throw Error('A change for this record is already queued. Sync or discard it first.');
- const data={requestId,payload,createdAt:new Date().toISOString()};
+ const base=payload.id&&!payload.intent?v.snapshot.records?.find(r=>r.id===payload.id&&r.kind===payload.kind):null;
+ const data={requestId,payload,createdAt:new Date().toISOString(),...(base?{base:{_v:base._v,status:base.status,data:base.data}}:{})};
  const box=await seal(v.key,data,id);if(unlocked!==v)throw Error('Session changed');await put({id,owner,box});
 }
 export async function listDrafts(owner){const v=unlocked;if(!v||v.owner!==owner)return [];const rows=(await all()).filter(r=>r.owner===owner&&r.id.startsWith('draft:'));const result=[];for(const row of rows){result.push({...await unseal(v.key,row.box,row.id),id:row.id});}if(unlocked!==v)throw Error('Session changed');return result;}
-export async function markDraftError(owner,id,error){const v=unlocked;if(!v||v.owner!==owner)return;const row=await get(id);if(!row||row.owner!==owner)return;const data=await unseal(v.key,row.box,id);const box=await seal(v.key,{...data,error:String(error).slice(0,100)},id);if(unlocked===v)await put({...row,box});}
+export async function markDraftError(owner,id,error,conflicts=[]){const v=unlocked;if(!v||v.owner!==owner)return;const row=await get(id);if(!row||row.owner!==owner)return;const data=await unseal(v.key,row.box,id);const box=await seal(v.key,{...data,error:String(error).slice(0,100),conflicts:conflicts.map(k=>String(k).slice(0,100)).slice(0,100)},id);if(unlocked===v)await put({...row,box});}
 export async function deleteDraft(owner,id){if(!vaultUnlocked(owner)||!id.startsWith('draft:'+owner+':'))throw Error('forbidden');await drop(id);}
