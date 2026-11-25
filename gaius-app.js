@@ -240,7 +240,7 @@ function notification(key,isError=false){
 }
 function forgetEdits(){editReport=editPlan=editProfile=null;for(const k of Object.keys(edits))delete edits[k];}
 function signedOut(){
- view=null;syncMondayAccess();forgetEdits();store.clearSession();vis('app',false);vis('auth',true);vis('feedback',false);
+ view=null;window.GAIUS_ACTIVE_IDENTITY=null;syncMondayAccess();forgetEdits();store.clearSession();vis('app',false);vis('auth',true);vis('feedback',false);
  window.dispatchEvent(new Event('gaius:nexus-session-cleared'));
  // Clear rendered private content and fields before another account uses the same tab.
  for(const id of ['adminUsers','auditList','queue','reportList','recent','planList','docList','peopleList','profileFields','attendanceList','annList','projectList'])$(id).replaceChildren();
@@ -254,13 +254,13 @@ function signedOut(){
 async function info(){const result=await store.info();bootstrap=result.bootstrap;emailRecovery=result.emailRecovery===true;authText();}
 async function refresh(){
  const next=await store.state(); if(next.onboarding){if(!view?.onboarding){view=next;onboarding();}else view=next;return;}
- const first=!view||view.onboarding;view=next;syncMondayAccess();
+ const first=!view||view.onboarding||view.me?.id!==next.me?.id||view.me?.role!==next.me?.role;view=next;syncMondayAccess();
  if(first){vis('auth',false);vis('app',true);forgetEdits();defaults();tab=seesReports(current())?'dashboard':isMondayParticipant(current())?'attendance':'profilePage';}
  renderAll();
  // UI-only notification: no credentials or organizational data leave the browser.
- window.dispatchEvent(new CustomEvent('gaius:nexus-session-ready',{
-  detail:{id:next.me?.id,role:next.me?.role}
- }));
+ const identity={id:next.me?.id,role:next.me?.role};
+ window.GAIUS_ACTIVE_IDENTITY=identity;
+ if(first)window.dispatchEvent(new CustomEvent('gaius:nexus-session-ready',{detail:identity}));
 }
 async function act(el,fn){
  if(busy.has(el))return;busy.add(el);if(el.matches('button'))el.disabled=true;
