@@ -279,7 +279,6 @@ export function v11State(db,u){
 }
 export function canReadFile(u,f){
  if(!active(u)||f.status==='removed')return false;
- if(f.scopeType==='personal')return f.ownerId===u.id;
  if(isCenterAccount(u)&&f.scopeType==='hq')return false;
  if(isDirector(u))return true;
  if(f.ownerId===u.id)return true;
