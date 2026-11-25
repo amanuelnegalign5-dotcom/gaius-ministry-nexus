@@ -10,6 +10,12 @@ async function enter(page,role,center){
  await page.goto('http://127.0.0.1:4173/?workspace=local');
  await expect(page.locator('#app')).toBeVisible();
  await expect(page.locator('#who')).toContainText('Test account');
+ // The director and center roles automatically open Nexus. Verify the preserved
+ // legacy navigation after deliberately returning from that workspace as well.
+ if(['country_director','international_director',...centerRoles.filter(r=>r!=='volunteer')].includes(role)){
+  await expect(page.locator('#gaiusV11 [data-v="close"]')).toBeVisible();
+  await page.locator('#gaiusV11 [data-v="close"]').click();
+ }
 }
 for(const role of centerRoles)test(role+' cannot see Monday attendance on any legacy navigation screen',async({page})=>{
  await enter(page,role,'Gerji');
