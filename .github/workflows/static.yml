@@ -56,6 +56,18 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
+      - name: Verify live API and browser CORS before publishing frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://gaius-nexus-api.amanuelnegalign135.workers.dev"
+          origin="https://amanuelnegalign5-dotcom.github.io"
+          curl --retry 3 --retry-all-errors --max-time 20 -fsS -D /tmp/preflight -o /dev/null -X OPTIONS "$api/info" -H "Origin: $origin" -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: content-type,authorization"
+          grep -iF "access-control-allow-origin: $origin" /tmp/preflight
+          curl --retry 3 --retry-all-errors --max-time 20 -fsS -D /tmp/info-headers -o /tmp/info-body -X POST "$api/info" -H "Origin: $origin" -H "Content-Type: application/json" --data '{}'
+          grep -iF "access-control-allow-origin: $origin" /tmp/info-headers
+          node -e 'const b=JSON.parse(require("fs").readFileSync("/tmp/info-body","utf8"));if(typeof b.bootstrap!=="boolean")throw Error("Unexpected live API response");console.log("Live API /info verified")'
+
   build:
     needs: deploy-backend
     runs-on: ubuntu-latest

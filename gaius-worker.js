@@ -206,7 +206,7 @@ export default {
     const cors={'Access-Control-Allow-Origin':allowed,'Access-Control-Allow-Methods':'POST, OPTIONS','Access-Control-Allow-Headers':'Authorization, Content-Type, X-File-Name, X-Gaius-Scope, X-Gaius-Unit','Vary':'Origin'};
     if(request.method==='OPTIONS')return new Response(null,{status:204,headers:cors});
     const room=env.WORKSPACE.get(env.WORKSPACE.idFromName('gaius-ministry-v10'));
-    const response=await room.fetch(request);
-    return new Response(response.body,{status:response.status,headers:{...Object.fromEntries(response.headers),...cors}});
+    try{const response=await room.fetch(request);
+    return new Response(response.body,{status:response.status,headers:{...Object.fromEntries(response.headers),...cors}});}catch(e){console.error('Workspace request failed',e?.name||'Error');return new Response(JSON.stringify({error:'serviceError'}),{status:503,headers:{'Content-Type':'application/json','Cache-Control':'no-store',...cors}});}
   }
 };
