@@ -92,7 +92,7 @@ function canEditRecord(db,u,r,ctx=grantContext(db,u)){
  if(!['draft','revision_requested'].includes(r.status)||!canRead(u,r,db,ctx))return false;
  if(r.scopeType==='personal')return r.ownerId===u.id&&canCreate(u,r.kind,r.scopeType,r.scopeId,ctx);
  if(ctx.record(r,'edit'))return true;
- return canCreate(u,r.kind,r.scopeType,r.scopeId,ctx)&&(isDirector(u)||r.ownerId===u.id||r.kind==='centerAttendance'&&r.scopeType==='center'&&sameUnit(r.scopeId,u.center)&&centerRosterManager(u));
+ return canCreate(u,r.kind,r.scopeType,r.scopeId)&&(isDirector(u)||r.ownerId===u.id||r.kind==='centerAttendance'&&r.scopeType==='center'&&sameUnit(r.scopeId,u.center)&&centerRosterManager(u));
 }
 function recordActions(db,u,r,ctx){
  const owner=r.ownerId===u.id, personal=r.scopeType==='personal', director=isDirector(u), dedicated=['visits','directorGoals'].includes(r.kind), review=!personal&&r.status==='submitted'&&(director||!owner&&(granted(u,'v11:approve')||ctx.record(r,'approve')));
@@ -166,11 +166,9 @@ function updateState(db,u,p){
  const old=db.one('v11_records',clean(p.id));check(old,'missing',404);check(canRead(u,old,db),'forbidden');check(old._v===Number(p.version),'conflict',409);
  const decision=clean(p.decision,40),note=clean(p.note,3000);
  if(['visits','directorGoals'].includes(old.kind))check(decision==='archive','useDedicatedWorkflow',400);check(['submit','approve','revision_requested','reject','archive','revise'].includes(decision),'invalidTransition',400);
- const authority=isDirector(u)||granted(u,'v11:approve')||v11Grant(db,u,old,'approve');
- if(decision==='submit')check(old.ownerId===u.id||isDirector(u),'forbidden');
- else if(decision==='revise')check(old.ownerId===u.id||isDirector(u),'forbidden');
- else if(decision==='archive')check(isDirector(u)||old.ownerId===u.id,'forbidden');
- else {check(authority||decision==='revision_requested'&&centerCanReview(u,old),'forbidden');if(!isDirector(u))check(old.ownerId!==u.id,'forbidden');}
+ const actions=recordActions(db,u,old,grantContext(db,u));
+ const key={submit:'submit',approve:'approve',revision_requested:'requestChanges',reject:'approve',archive:'archive',revise:'revise'}[decision];
+ check(actions[key],'forbidden');
  const allowed={submit:['draft','revision_requested'],approve:['submitted'],revision_requested:['submitted'],reject:['submitted'],archive:['draft','approved','rejected','revision_requested'],revise:['approved']};
  check(allowed[decision]?.includes(old.status),'invalidTransition',409);
  if(decision==='revision_requested')check(!!note,'required:note',400);
@@ -291,12 +289,13 @@ export function v11State(db,u){
  const scopeType=isDirector(u)?'organization':centerReader(u)?'center':hqLeader(u)?'hq':'personal';
  const scopeId=scopeType==='center'?u.center:scopeType==='hq'?u.department:scopeType==='personal'?u.id:'org';
  const ctx=grantContext(db,u);
- const candidates=[{scopeType,scopeId},...(!isCenterAccount(u)?[{scopeType:'organization',scopeId:'org'},...Object.values(hqDepartmentAliases).map(a=>({scopeType:'hq',scopeId:a[0]}))]:[]),...ctx.centers.filter(c=>!isCenterAccount(u)||ctx.own?.id===c.id).map(c=>({scopeType:'center',scopeId:ctx.own?.id===c.id?u.center:c.id}))].filter(x=>x.scopeId);
+ const candidates=[{scopeType,scopeId},...(!isCenterAccount(u)?[{scopeType:'organization',scopeId:'org'},...Object.values(hqDepartmentAliases).map(a=>({scopeType:'hq',scopeId:a[0]}))]:[]),...ctx.centers.filter(c=>!isCenterAccount(u)||ctx.own?.id===c.id).map(c=>({scopeType:'center',scopeId:ctx.own?.id===c.id?u.center:c.id,label:[c.direction,c.name].filter(Boolean).join(' — ')}))].filter(x=>x.scopeId);
  const createScopes=Object.fromEntries(V11_KINDS_LIST.map(k=>[k,candidates.filter((x,i,a)=>a.findIndex(y=>y.scopeType===x.scopeType&&y.scopeId===x.scopeId)===i&&canCreate(u,k,x.scopeType,x.scopeId,ctx))]));
  const allowedKinds=isDirector(u)?V11_KINDS_LIST.filter(k=>!!V11_KINDS[k]):V11_KINDS_LIST.filter(k=>createScopes[k].length);
  const visible=db.all('v11_records').filter(r=>canRead(u,r,db,ctx));
+ const viewKinds=V11_KINDS_LIST.filter(k=>candidates.some(x=>ctx.record({kind:k,...x,status:'submitted'},'view')||ctx.record({kind:k,...x,status:'submitted'},'approve')||ctx.record({kind:k,...x,status:'draft'},'edit')));
  return {v11:{records:visible.map(r=>({...r,delegatedApproval:ctx.record(r,'approve'),centerReview:centerCanReview(u,r),actions:recordActions(db,u,r,ctx)})),
-  capabilities:{director:isDirector(u),oversight:isDirector(u),canApprove:granted(u,'v11:approve'),canPublish:granted(u,'v11:publish'),canEditManual:granted(u,'v11:edit_manual'),allowedKinds,createScopes,readableKinds:[...new Set([...allowedKinds,...(centerReader(u)?['centerAttendance','monthly','plans6']:[]),...visible.map(r=>r.kind)])],canUploadFile:scopeType==='center'?canUploadFile(u,'center',u.center):scopeType!=='personal'||legacyPermission(u,'v11:upload_file'),defaultScopeType:scopeType,defaultScopeId:scopeId,hqReports:isDirectorRole(u)||hqLeader(u)},
+  capabilities:{director:isDirector(u),oversight:isDirector(u),canApprove:granted(u,'v11:approve'),canPublish:granted(u,'v11:publish'),canEditManual:granted(u,'v11:edit_manual'),allowedKinds,createScopes,readableKinds:[...new Set([...allowedKinds,...(centerReader(u)?['centerAttendance','monthly','plans6']:[]),...visible.map(r=>r.kind),...viewKinds])],canUploadFile:scopeType==='center'?canUploadFile(u,'center',u.center):scopeType!=='personal'||legacyPermission(u,'v11:upload_file'),defaultScopeType:scopeType,defaultScopeId:scopeId,hqReports:isDirectorRole(u)||hqLeader(u)},
   files:db.all('v11_files').filter(f=>canReadFile(u,f)).map(f=>({id:f.id,name:f.name,type:f.type,size:f.size,scopeType:f.scopeType,scopeId:f.scopeId,ownerId:f.ownerId,status:f.status,createdAt:f.createdAt,...(isDirector(u)?{allowedUserIds:f.allowedUserIds||[]}:{} )}))}};
 }
 export function canReadFile(u,f){
