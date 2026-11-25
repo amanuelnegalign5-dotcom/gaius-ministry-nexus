@@ -26,9 +26,10 @@ test('selected filename is announced and wrong source type is explicitly explain
  assert.match(ui,/role="status" aria-live="polite"/);
  assert.match(ui,/Only a \.json import file works here/);
 });
-test('general media upload is disabled until the authenticated backend confirms R2',()=>{
+test('general media upload requires authenticated backend storage readiness, with or without R2',()=>{
  assert.match(worker,/if\(route==='state'\)\{/);
- assert.match(worker,/services:\{mediaUploads:!!this\.env\.MEDIA_BUCKET\}/);
+ assert.match(worker,/services:\{mediaUploads:true,mediaMode:this\.media\.mode,maxFileBytes:this\.media\.maxFileBytes\}/);
+ assert.match(worker,/this\.media=privateMediaBucket\(new SqlPrivateMedia\(ctx\.storage\),env\.MEDIA_BUCKET\)/);
  assert.match(ui,/ready=state\?\.services\?\.mediaUploads===true/);
  assert.match(ui,/ready\?'':'disabled'/);
  assert.match(ui,/if\(state\.services\?\.mediaUploads!==true\)throw Error/);
