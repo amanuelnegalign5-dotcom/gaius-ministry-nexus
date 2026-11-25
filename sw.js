@@ -1,8 +1,8 @@
 
 const scope=new URL(self.registration.scope);
 const prefix='gaius-review:'+scope.pathname+':';
-const cacheName=prefix+'11.3.0-integrated-governance';
-const files=['./','./index.html','./gaius-appearance-help.js','./gaius-config.js','./gaius-app.js','./gaius-store.js','./gaius-core.js','./gaius-report-policy.js','./gaius-v11-ui.js','./gaius-governance-ui.js','./gaius-department-charters.js','./gaius-v11-model.js','./gaius-nexus-analytics.js','./gaius-v11-core.js','./gaius-grant-bridge.js','./gaius-v11-export.js','./gaius-v11.css','./gaius-brand.css','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png','./icons/maskable-192.png','./icons/maskable-512.png','./icons/apple-touch-icon.png','./icons/official-logo.jpg','./icons/gaius-white-logo.webp','./icons/favicon-32.png'];
+const cacheName=prefix+'11.4.0-offline-vault';
+const files=['./','./index.html','./gaius-offline-vault.js','./gaius-appearance-help.js','./gaius-config.js','./gaius-app.js','./gaius-store.js','./gaius-core.js','./gaius-report-policy.js','./gaius-v11-ui.js','./gaius-governance-ui.js','./gaius-department-charters.js','./gaius-v11-model.js','./gaius-nexus-analytics.js','./gaius-v11-core.js','./gaius-grant-bridge.js','./gaius-v11-export.js','./gaius-v11.css','./gaius-brand.css','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png','./icons/maskable-192.png','./icons/maskable-512.png','./icons/apple-touch-icon.png','./icons/official-logo.jpg','./icons/gaius-white-logo.webp','./icons/favicon-32.png'];
 const assets=new Set(files.map(p=>new URL(p,scope).href));
 self.addEventListener('install',event=>{
  event.waitUntil((async()=>{const cache=await caches.open(cacheName);await cache.addAll(files.map(p=>new Request(new URL(p,scope),{cache:'reload'})));await self.skipWaiting();})());
@@ -15,8 +15,9 @@ self.addEventListener('fetch',event=>{
  if(req.method!=='GET'||url.origin!==scope.origin)return;
  const relative=url.pathname.slice(scope.pathname.length);
  const nav=req.mode==='navigate'&&url.pathname.startsWith(scope.pathname)&&['','index.html'].includes(relative);
- if(!nav&&!assets.has(url.href))return;
- const key=nav?new URL('index.html',scope).href:url.href;
+ const canonical=new URL(url.href);canonical.search='';canonical.hash='';
+ if(!nav&&!assets.has(canonical.href))return;
+ const key=nav?new URL('index.html',scope).href:canonical.href;
  event.respondWith((async()=>{
   const cache=await caches.open(cacheName);
   try{

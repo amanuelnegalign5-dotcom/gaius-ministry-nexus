@@ -46,7 +46,7 @@ const tokenKey='gaius.v10.session:'+ (api||'local');
 export function hasSession(){return !!(sessionStorage.getItem(tokenKey)||(!shared&&sessionStorage.me));}
 let stateCache=null,stateFlight=null,stateGeneration=0;
 function invalidateState(){stateGeneration++;stateCache=null;stateFlight=null;}
-export function clearSession(){invalidateState();sessionStorage.removeItem(tokenKey);if(!shared)sessionStorage.removeItem('me');}
+export function clearSession(){invalidateState();sessionStorage.removeItem('gaius.v11.offlineIdentity');localStorage.removeItem('gaius.offline.device');sessionStorage.removeItem(tokenKey);if(!shared)sessionStorage.removeItem('me');}
 async function call(route,data={}){
   const token=sessionStorage.getItem(tokenKey);
   if(!shared)return handle(local,route,data,{local:true,token,legacyId:sessionStorage.me});
@@ -76,11 +76,11 @@ export async function state({reuse=false}={}){
 }
 export const register=d=>shared&&['country_director','international_director'].includes(d.role)?call('director/claim',{registration:d,code:d.directorEmailCode}):call('register',d);
 export const requestDirectorCode=(role,email,setupKey)=>{if(!shared)throw new AppError('directorRequiresServer',403);return call('director/challenge',{role,email,setupKey});};
-export async function login(d){invalidateState();const {token}=await call('login',d);sessionStorage.setItem(tokenKey,token);if(!shared)sessionStorage.removeItem('me');}
+export async function login(d){invalidateState();sessionStorage.removeItem('gaius.v11.offlineIdentity');localStorage.removeItem('gaius.offline.device');const {token}=await call('login',d);sessionStorage.setItem(tokenKey,token);if(!shared)sessionStorage.removeItem('me');}
 export async function logout(){try{await call('logout');}finally{clearSession();}}
-export async function command(action,payload){
+export async function command(action,payload,requestId=crypto.randomUUID()){
   const mutating=!['governance.list','governance.photo'].includes(action);if(mutating)invalidateState();
-  const data={action,payload,requestId:crypto.randomUUID()};
+  const data={action,payload,requestId};
   try{try{return await call('command',data);}
   catch(e){if(shared&&e.message==='offline'&&navigator.onLine)return await call('command',data);throw e;}}
   finally{if(mutating)invalidateState();}

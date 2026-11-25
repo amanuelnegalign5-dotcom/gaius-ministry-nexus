@@ -1,0 +1,45 @@
+import {test,expect} from '@playwright/test';
+test('service worker offline reload, encrypted new draft, reconnect sync',async({page,context})=>{
+ test.setTimeout(90000);
+ const api='https://gaius-nexus-api.amanuelnegalign135.workers.dev';
+ const me={id:'offline-user',name:'Synthetic center leader',username:'offline',role:'center_leader',center:'Gerji',department:'Worship Team',accountStatus:'active',adminPermissions:[],_v:1};
+ const snapshot={me,authorization:{legacyPages:['profilePage'],offlineMondayRoster:[]},directory:[me],former:[],users:[],reports:[],plans:[],reviews:[],comments:[],attendance:[],projects:[],announcements:[],documents:[],audit:[],v11:{records:[],files:[],capabilities:{director:false,allowedKinds:['monthly'],readableKinds:['monthly'],createScopes:{monthly:[{scopeType:'center',scopeId:'Gerji'}]},defaultScopeType:'center',defaultScopeId:'Gerji',canUploadFile:false,hqReports:false}},services:{mediaUploads:true,maxFileBytes:1048576}};
+ let writes=[];
+ await context.route(api+'/**',async route=>{
+  const path=new URL(route.request().url()).pathname,headers={'access-control-allow-origin':'*','access-control-allow-headers':'authorization,content-type','access-control-allow-methods':'POST,OPTIONS'};
+  if(route.request().method()==='OPTIONS')return route.fulfill({status:204,headers});
+  if(path.endsWith('/info'))return route.fulfill({json:{bootstrap:false,emailRecovery:false},headers});
+  if(path.endsWith('/state'))return route.fulfill({json:snapshot,headers});
+  if(path.endsWith('/command')){const data=route.request().postDataJSON();if(data.action==='v11.save'){writes.push(data);return route.fulfill({json:{id:'server-record'},headers});}}
+  return route.fulfill({status:400,json:{error:'unknown'},headers});
+ });
+ await page.addInitScript(({api})=>{localStorage.gLang='en';sessionStorage.setItem('gaius.v10.session:'+api,'synthetic-offline-token');},{api});
+ await page.goto('http://127.0.0.1:4173/index.html');
+ await expect(page.locator('#gaiusV11 .v11nav')).toBeVisible();
+ await page.waitForFunction(()=>!!navigator.serviceWorker.controller);
+ await page.locator('#gaiusV11 [data-section="offline"]').click();
+ await page.locator('#offlinePassphrase').fill('synthetic-offline-passphrase');
+ await page.locator('#offlineUnlock button').click();
+ await expect(page.locator('#gaiusV11')).toContainText('Encrypted pending drafts');
+ await context.setOffline(true);
+ await page.reload();
+ await expect(page.locator('#offlinePassphrase')).toBeVisible();
+ await page.locator('#offlinePassphrase').fill('synthetic-offline-passphrase');
+ await page.locator('#offlineUnlock button').click();
+ await expect(page.locator('#gaiusV11')).toContainText('Encrypted pending drafts');
+ await expect(page.locator('#offlineMonday')).toHaveCount(0);
+ await expect(page.locator('#gaiusV11 [data-section="delegation"]')).toHaveCount(0);
+ await page.locator('#gaiusV11 .v11nav [data-section="records"]').click();
+ await page.locator('#v11Kind').selectOption('monthly');
+ for(const [key,value] of [['title','Synthetic offline report'],['month','2026-11'],['activity','Training'],['result','Completed']])await page.locator('[data-field="'+key+'"]').fill(value);
+ await page.locator('#v11form button[type="submit"]').click();
+ await expect(page.locator('#gaiusV11')).toContainText('Synthetic offline report');
+ expect(writes).toHaveLength(0);
+ const contents=await page.evaluate(()=>new Promise((resolve,reject)=>{const r=indexedDB.open('gaius-encrypted-offline-v1');r.onsuccess=()=>{const q=r.result.transaction('vault').objectStore('vault').getAll();q.onsuccess=()=>resolve(JSON.stringify(q.result));q.onerror=reject;};r.onerror=reject;}));
+ expect(contents).not.toContain('Synthetic offline report');
+ await context.setOffline(false);
+ await expect.poll(()=>writes.length).toBe(1);
+ await expect(page.locator('#gaiusV11')).not.toContainText('Synthetic offline report');
+ expect(writes[0].requestId).toMatch(/^[a-z0-9-]{36}$/);
+ expect(writes[0].payload.scopeId).toBe('Gerji');
+});

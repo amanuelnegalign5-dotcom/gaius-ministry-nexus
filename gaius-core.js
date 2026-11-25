@@ -391,7 +391,7 @@ function visibleState(db,u){
     u.center?members.filter(x=>x.id===u.id||x.center===u.center||directors.includes(x.role)):
     u.department?members.filter(x=>x.id===u.id||(!x.center&&x.department===u.department)||directors.includes(x.role)):
     members.filter(x=>x.id===u.id||directors.includes(x.role));
-  return {me:privateUser(u),authorization:{legacyPages:legacyPages(u)},directory:visiblePeople.map(directoryUser),former:full(u)?all.filter(x=>stateOf(x)==='removed').map(x=>({id:x.id,name:x.name})):[],
+  return {me:privateUser(u),authorization:{legacyPages:legacyPages(u),offlineMondayRoster:managesAttendance(u)?members.filter(isMondayParticipant).map(({id,name})=>({id,name})):[]},directory:visiblePeople.map(directoryUser),former:full(u)?all.filter(x=>stateOf(x)==='removed').map(x=>({id:x.id,name:x.name})):[],
     users:admin?all.filter(x=>full(u)||canManage(u,x)).map(privateUser):[],reports,plans,
     reviews:reviews.filter(r=>r.kind==='plan'?planIds.has(r.itemId):reportIds.has(r.itemId)),
     comments:reportAccess?db.all('comments').filter(c=>reportIds.has(c.reportId)&&(c.visible===true||directors.includes(u.role))):[],
