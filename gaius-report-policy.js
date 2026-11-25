@@ -19,3 +19,7 @@ export const isHQReporter=u=>!!u&&(u.accountStatus||'active')==='active'&&!u.cen
  hqDepartmentAliases[u.role].some(n=>normalizeUnit(n)===normalizeUnit(u.department));
 export const isDirectorRole=u=>!!u&&(u.accountStatus||'active')==='active'&&
  ['country_director','international_director'].includes(u.role);
+
+
+export const isCenterLeaderRole = role => ['center_leader', 'potential_center_leader', 'center_department_leader', 'potential_department_leader'].includes(role);
+export const isCenterRole = role => role === 'volunteer' || isCenterLeaderRole(role);
