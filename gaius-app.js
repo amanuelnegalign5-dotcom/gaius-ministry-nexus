@@ -261,8 +261,8 @@ function signedOut(){
  set('regCountry','Ethiopia');$('photoPreview').removeAttribute('src');vis('photoPreview',false);setMode('login');
 }
 async function info(){const result=await store.info();bootstrap=result.bootstrap;emailRecovery=result.emailRecovery===true;authText();}
-async function refresh(){
- const next=await store.state(); if(next.onboarding){if(!view?.onboarding){view=next;onboarding();}else view=next;return;}
+async function refresh(reuse=false){
+ const next=await store.state({reuse}); if(next.onboarding){if(!view?.onboarding){view=next;onboarding();}else view=next;return;}
  const first=!view||view.onboarding||view.me?.id!==next.me?.id||view.me?.role!==next.me?.role;view=next;syncMondayAccess();
  if(first){vis('auth',false);vis('app',true);forgetEdits();defaults();tab=seesReports(current())?'dashboard':isMondayParticipant(current())?'attendance':'profilePage';}
  renderAll();
@@ -432,6 +432,7 @@ function navigate(id,scroll=true){
  document.querySelectorAll('.page').forEach(p=>p.classList.toggle('on',p.id===tab));
  document.querySelectorAll('.nav').forEach(n=>{const on=n.dataset.page===tab;vis(n,allowPage(n.dataset.page));n.classList.toggle('on',on);n.classList.toggle('ghost',!on);if(on)n.setAttribute('aria-current','page');else n.removeAttribute('aria-current');});
  vis('auditPanel',tab==='admin'&&full(current()));
+ if(view&&!view.onboarding&&!$('app').classList.contains('nexus-mode'))renderActivePage();
  if(scroll)window.scrollTo({top:0,behavior:'auto'});
 }
 function revisionHistory(review){
@@ -657,14 +658,14 @@ async function saveCatalog(bucket){
 }
 for(const [bucket,c] of Object.entries(catalogs))on(c.save,()=>saveCatalog(bucket));
 document.querySelectorAll('.cancelRecord').forEach(b=>b.onclick=()=>clearCatalog(b.dataset.bucket));
-function renderCatalogs(){
+function renderCatalogs(which=tab){
  const u=current();
  vis(document.querySelector('#board .publisher'),publishes(u));
  vis($('saveProject').closest('.card'),full(u)||permit(u,'projects'));
- $('annList').innerHTML=view.announcements.slice().reverse().map(r=>`<div class="item"><b>${h(r.title)}</b><div class="reporttext">${h(r.body)}</div>${attachmentLink(r.file)}<div class="muted">${h(r.author)} · ${h(dateTime(r.createdAt))}</div>${entityButtons('announcements',r,permit(u,'announcements'))}</div>`).join('')||empty();
- const owner=val('proOwner');selectOptions('proOwner',people().map(p=>[p.id,p.name]),owner||people()[0]?.id);
- $('projectList').innerHTML=view.projects.map(r=>`<div class="item"><b>${h(r.title)}</b><div class="reporttext">${h(r.body)}</div><div class="muted">${h(t('owner'))} · ${h(memberName(r.owner))} · ${h(r.due)}</div>${attachmentLink(r.file)}${button('project-plan','planForProject',{id:r.id})}${entityButtons('projects',r,permit(u,'projects'))}</div>`).join('')||empty();
- $('docList').innerHTML=permit(u,'documents')?(view.documents.map(r=>`<div class="item"><b>${h(r.title)}</b><div class="muted">${h(r.type)} · ${h(r.fileName)} · ${h(r.expiry||'—')}</div>${entityButtons('documents',r,true)}</div>`).join('')||empty()):'';
+ if(which==='board')$('annList').innerHTML=view.announcements.slice().reverse().map(r=>`<div class="item"><b>${h(r.title)}</b><div class="reporttext">${h(r.body)}</div>${attachmentLink(r.file)}<div class="muted">${h(r.author)} · ${h(dateTime(r.createdAt))}</div>${entityButtons('announcements',r,permit(u,'announcements'))}</div>`).join('')||empty();
+ if(which==='workspace'){const owner=val('proOwner');selectOptions('proOwner',people().map(p=>[p.id,p.name]),owner||people()[0]?.id);
+ $('projectList').innerHTML=view.projects.map(r=>`<div class="item"><b>${h(r.title)}</b><div class="reporttext">${h(r.body)}</div><div class="muted">${h(t('owner'))} · ${h(memberName(r.owner))} · ${h(r.due)}</div>${attachmentLink(r.file)}${button('project-plan','planForProject',{id:r.id})}${entityButtons('projects',r,permit(u,'projects'))}</div>`).join('')||empty();}
+ if(which==='documents')$('docList').innerHTML=permit(u,'documents')?(view.documents.map(r=>`<div class="item"><b>${h(r.title)}</b><div class="muted">${h(r.type)} · ${h(r.fileName)} · ${h(r.expiry||'—')}</div>${entityButtons('documents',r,true)}</div>`).join('')||empty()):'';
 }
 function summary(p){
  const att=view.attendance.filter(a=>a.personId===p.id),pr=view.projects.filter(r=>r.owner===p.id);
@@ -673,8 +674,8 @@ function summary(p){
  if(seesReports(current()))parts.push(`${t('reports')} ${view.reports.filter(r=>r.userId===p.id).length}`);
  return parts.filter(Boolean).join(' · ');
 }
-function renderPeople(){
- $('peopleList').innerHTML=people().map(p=>`<div class="card profile"><img class="avatar" src="${h(photo(p.photo))}" alt=""><div><b>${h(p.name)}</b><div class="muted">${h(summary(p))}</div></div></div>`).join('');
+function renderPeople(which=tab){
+ if(which==='directory')$('peopleList').innerHTML=people().map(p=>`<div class="card profile"><img class="avatar" src="${h(photo(p.photo))}" alt=""><div><b>${h(p.name)}</b><div class="muted">${h(summary(p))}</div></div></div>`).join('');
  const u=current();$('profileName').textContent=u.name;$('profileRole').textContent=role(u.role)+' · '+(dept(u.department)||'');$('profilePhoto').src=photo(u.photo);
  $('profileSummary').textContent=summary(u);
 }
@@ -775,14 +776,27 @@ on('exportData',async()=>{
  a.href=url;a.download='GAIUS-private-records-'+day()+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);
 });
 $('userSearch').oninput=renderAdmin;$('userFilter').onchange=renderAdmin;
+function renderActivePage(){
+ switch(tab){
+ case 'dashboard':renderDashboard();break;
+ case 'reports':renderReports();break;
+ case 'plans':renderPlans();break;
+ case 'attendance':if(isMondayParticipant(current()))renderAttendance();break;
+ case 'board':case 'workspace':case 'documents':renderCatalogs(tab);break;
+ case 'directory':case 'profilePage':renderPeople(tab);break;
+ case 'admin':renderAdmin();break;
+ }
+}
+window.addEventListener('gaius:nexus-legacy-open',()=>{if(view&&!view.onboarding)navigate(tab,false);});
 function renderAll(){
  const u=current();syncMondayAccess();if(!u||view.onboarding)return;
- navigate(tab,false);
  $('who').textContent=u.name+' · '+role(u.role)+(u.center?' · '+u.center:'')+(full(u)?' · '+t('fullAdmin'):'');$('miniPhoto').src=photo(u.photo);
  selectOptions('reportStatus',reportOptions(),'submitted');
- renderDashboard();renderReports();renderPlans();if(isMondayParticipant(u))renderAttendance();else{for(const id of ['attendanceList','attendanceSummary','batchRows'])$(id).replaceChildren();}renderCatalogs();renderPeople();renderAdmin();navigate(tab,false);
+ const sections={dashboard:['recent','deptSummary','monthChart','performanceMonths'],reports:['reportList'],plans:['planList'],attendance:['attendanceList','attendanceSummary','batchRows'],workspace:['projectList'],board:['annList'],documents:['docList'],directory:['peopleList'],admin:['adminUsers','queue','auditList']};
+ for(const [page,ids] of Object.entries(sections))if(!allowPage(page))for(const id of ids)$(id).replaceChildren();
+ navigate(tab,false);
 }
-document.querySelectorAll('.nav').forEach(n=>n.onclick=()=>act(n,async()=>{await refresh();navigate(n.dataset.page);if(n.dataset.page==='profilePage'){editProfile=null;$('profileEditor').open=false;}}));
+document.querySelectorAll('.nav').forEach(n=>n.onclick=()=>act(n,async()=>{await refresh(true);navigate(n.dataset.page);if(n.dataset.page==='profilePage'){editProfile=null;$('profileEditor').open=false;}}));
 document.addEventListener('click',e=>{
  if(e.target.closest('[data-dismiss]')){vis('feedback',false);return;}
  const b=e.target.closest('[data-action]');if(!b)return;
