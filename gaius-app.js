@@ -1,5 +1,5 @@
 import * as store from './gaius-store.js';
-import { roleDepartments, directors, permissions, seedPeople, stateOf, full, permit, seesReports, writesReports, managesAttendance, publishes, canManage, flow, version } from './gaius-core.js';
+import { roleDepartments, directors, permissions, seedPeople, stateOf, full, permit, seesReports, writesReports, managesAttendance, isMondayParticipant, publishes, canManage, flow, version } from './gaius-core.js';
 
 const $=id=>document.getElementById(id);
 const base=window.GAIUS_V10;
@@ -201,7 +201,7 @@ const roleText={
  admin_finance:['የአስተዳደርና ፋይናንስ ክፍል ኃላፊ','Administration and Finance HQ Leader'],monday_leader:['የሰኞ ፕሮግራም ኃላፊ','Monday Staff Program Leader'],
  country_director:['የሀገር ውስጥ ዳይሬክተር','Country Director'],international_director:['ዓለም አቀፍ ዳይሬክተር','International Director'],
  international_staff:['ዓለም አቀፍ ሠራተኛ','International Staff'],assisting_staff:['ረዳት ሠራተኛ','Assisting Staff'],prayer_staff:['የጸሎት አገልጋይ','Prayer Staff'],staff:['ሠራተኛ','Staff'],
- center_leader:['የማዕከል መሪ','Center Leader'], potential_center_leader:['እጩ የማዕከል መሪ','Potential Center Leader'],
+ center_senior_leader:['የማዕከል ከፍተኛ መሪ','Center Senior Leader'],center_leader:['የማዕከል መሪ','Center Leader'], potential_center_leader:['እጩ የማዕከል መሪ','Potential Center Leader'],
  center_department_leader:['የማዕከል ክፍል መሪ','Center Department Leader'],potential_department_leader:['እጩ የክፍል መሪ','Potential Department Leader'],
  volunteer:['በጎ ፈቃደኛ','Volunteer'],hq_staff:['የHQ ሠራተኛ','HQ Staff']
 };
@@ -350,10 +350,10 @@ on('finishReset',async()=>{
 on('loginTab',async()=>{if(mode==='complete'){try{await store.logout();}finally{signedOut();}return;}setMode('login');});
 on('registerTab',async()=>{await info();setMode('register');});
 on('logout',async()=>{try{await store.logout();}finally{signedOut();}await info();});
-const centerRegistrationRoles=new Set(['center_leader','potential_center_leader','center_department_leader','potential_department_leader','volunteer']);
+const centerRegistrationRoles=new Set(['center_senior_leader','center_leader','potential_center_leader','center_department_leader','potential_department_leader','volunteer']);
 function requiredCenterInput(){const isCenter=centerRegistrationRoles.has(val('regRole'));
  $('regCenter').required=isCenter;$('regCenterStar').textContent=isCenter?'*':'';
- if(['center_leader','potential_center_leader','volunteer'].includes(val('regRole')))$('regDept').required=false;
+ if(['potential_center_leader','volunteer'].includes(val('regRole')))$('regDept').required=false;
  else $('regDept').required=true;
  if(directors.includes(val('regRole'))){$('regDept').required=false;set('regDept','');}
  $('regDeptStar').textContent=$('regDept').required?'*':'';
@@ -394,6 +394,7 @@ function defaults(){
 }
 function allowPage(id){
  if(!current()||view.onboarding)return false;
+ if(['attendance','workspace'].includes(id)&&!isMondayParticipant(current()))return false;
  // Unassigned staff use Monday staff workspace, attendance, and own profile only.
  if(!full(current())&&!seesReports(current())&&!permit(current(),'manage_users'))
    return ['workspace','attendance','profilePage'].includes(id);
@@ -404,7 +405,7 @@ function allowPage(id){
  return true;
 }
 function navigate(id,scroll=true){
- tab=allowPage(id)?id:'attendance';
+ tab=allowPage(id)?id:(isMondayParticipant(current())?'attendance':'profilePage');
  document.querySelectorAll('.page').forEach(p=>p.classList.toggle('on',p.id===tab));
  document.querySelectorAll('.nav').forEach(n=>{const on=n.dataset.page===tab;vis(n,allowPage(n.dataset.page));n.classList.toggle('on',on);n.classList.toggle('ghost',!on);if(on)n.setAttribute('aria-current','page');else n.removeAttribute('aria-current');});
  vis('auditPanel',tab==='admin'&&full(current()));
@@ -533,7 +534,7 @@ for(const id of ['search','monthFilter','deptFilter','reviewFilter'])$(id).oninp
 for(const id of ['period','dashMonth','dashYear'])$(id).oninput=renderDashboard;
 
 
-const people=()=>[...seedPeople,...view.directory];
+const people=()=>[...seedPeople,...view.directory].filter(isMondayParticipant);
 function expected(p,date,type){
  if(!p)return false;
  const name=(p.name||'').toLowerCase().trim().split(/\s+/)[0];
