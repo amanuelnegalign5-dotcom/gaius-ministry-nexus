@@ -1,6 +1,7 @@
 // Optional shared service. Wrangler bundles this module with gaius-core.js.
 import { AppError, digest, handle, authenticatedUser } from './gaius-core.js';
 import {canReadFile,canUploadFile} from './gaius-v11-core.js';
+import {governanceService,GOVERNANCE_CATALOG} from './gaius-governance-service.js';
 import { RecoveryService, recoveryReady } from './gaius-recovery.js';
 
 class SqlRecords {
@@ -108,6 +109,13 @@ export class MinistryWorkspace {
         const f=this.db.one('v11_files',String(data.payload.id||''));
         const result=await handle(this.db,route,data,{token,bootstrapAuthorized});
         if(f?.key&&this.env.MEDIA_BUCKET)await this.env.MEDIA_BUCKET.delete(f.key);
+        return json(result);
+      }
+      if(route==='command'&&typeof data.action==='string'&&data.action.startsWith('governance.')){
+        const {user}=await authenticatedUser(this.db,token);
+        const payload=data.payload||{};
+        if(typeof payload!=='object'||Array.isArray(payload))throw new AppError('unknown',400);
+        const result=this.db.atomic(()=>{const fresh=this.db.one('users',user.id);if(!fresh||(fresh.sessionVersion||0)!==(user.sessionVersion||0))throw new AppError('expired',401);return governanceService(this.db,fresh,data.action,payload,Date.now(),()=>crypto.randomUUID(),GOVERNANCE_CATALOG);});
         return json(result);
       }
       if(route==='state'){
