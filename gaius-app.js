@@ -246,7 +246,7 @@ async function info(){const result=await store.info();bootstrap=result.bootstrap
 async function refresh(){
  const next=await store.state(); if(next.onboarding){if(!view?.onboarding){view=next;onboarding();}else view=next;return;}
  const first=!view||view.onboarding;view=next;
- if(first){vis('auth',false);vis('app',true);forgetEdits();defaults();tab=seesReports(current())?'dashboard':'attendance';}
+ if(first){vis('auth',false);vis('app',true);forgetEdits();defaults();tab=seesReports(current())?'dashboard':isMondayParticipant(current())?'attendance':'profilePage';}
  renderAll();
  // UI-only notification: no credentials or organizational data leave the browser.
  window.dispatchEvent(new CustomEvent('gaius:nexus-session-ready',{
@@ -751,7 +751,7 @@ function renderAll(){
  const u=current();if(!u||view.onboarding)return;
  $('who').textContent=u.name+' · '+role(u.role)+(full(u)?' · '+t('fullAdmin'):'');$('miniPhoto').src=photo(u.photo);
  selectOptions('reportStatus',reportOptions(),'submitted');
- renderDashboard();renderReports();renderPlans();renderAttendance();renderCatalogs();renderPeople();renderAdmin();navigate(tab,false);
+ renderDashboard();renderReports();renderPlans();if(isMondayParticipant(u))renderAttendance();else{for(const id of ['attendanceList','attendanceSummary','batchRows'])$(id).replaceChildren();}renderCatalogs();renderPeople();renderAdmin();navigate(tab,false);
 }
 document.querySelectorAll('.nav').forEach(n=>n.onclick=()=>act(n,async()=>{await refresh();navigate(n.dataset.page);if(n.dataset.page==='profilePage'){editProfile=null;$('profileEditor').open=false;}}));
 document.addEventListener('click',e=>{
