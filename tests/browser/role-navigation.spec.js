@@ -1,4 +1,8 @@
 import {test,expect} from '@playwright/test';
+// Role tests exercise the actual application, independently of service-worker lifecycle.
+test.use({serviceWorkers:'block'});
+test.beforeEach(async({page})=>{page.on('pageerror',e=>console.log('PAGE ERROR:',e.message));page.on('requestfailed',r=>console.log('REQUEST FAILED:',r.url(),r.failure()?.errorText));});
+async function load(page){const response=await page.goto('http://127.0.0.1:4173/index.html?workspace=local');expect(response?.ok()).toBeTruthy();await expect(page.locator('#auth')).toBeAttached();await expect(page.locator('#app')).toBeAttached();}
 const centerRoles=['center_senior_leader','center_leader','center_department_leader','potential_center_leader','potential_department_leader','volunteer'];
 const staffRoles=['country_director','international_director','hq_staff','staff','monday_leader','media_leader'];
 async function enter(page,role,center){
@@ -7,7 +11,7 @@ async function enter(page,role,center){
   localStorage.setItem('users',JSON.stringify([{id:'fixture',name:'Test account',username:'fixture',role,center,department:center?'Worship Team':role==='media_leader'?'Media':'',accountStatus:'active',adminPermissions:[],_v:1}]));
   sessionStorage.setItem('me','fixture');
  },{role,center});
- await page.goto('http://127.0.0.1:4173/?workspace=local');
+ await load(page);
  await expect(page.locator('#app')).toBeVisible();
  await expect(page.locator('#who')).toContainText('Test account');
  // The director and center roles automatically open Nexus. Verify the preserved
@@ -43,7 +47,7 @@ test('director sees center-specific permission controls without false delegated 
    {id:'h',name:'Test HQ Leader',username:'hq',role:'followup_leader',department:'Follow-up',accountStatus:'active',adminPermissions:['comments'],_v:1}
   ]));sessionStorage.setItem('me','d');
  });
- await page.goto('http://127.0.0.1:4173/?workspace=local');
+ await load(page);
  await page.locator('#gaiusV11 [data-v="close"]').click();
  await page.locator('[data-page="admin"]').click();
  const center=page.locator('#adminUsers [data-id="c"]'),hq=page.locator('#adminUsers [data-id="h"]');
@@ -62,7 +66,7 @@ test('director sees center-specific permission controls without false delegated 
 
 test('appearance switches on login and persists through reload and system setting',async({page})=>{
  await page.emulateMedia({colorScheme:'light'});
- await page.goto('http://127.0.0.1:4173/?workspace=local');
+ await load(page);
  const select=page.locator('#auth [data-appearance]');
  await expect(select).toBeVisible();await select.selectOption('dark');
  await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
