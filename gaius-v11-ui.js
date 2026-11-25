@@ -1,4 +1,5 @@
 import * as store from './gaius-store.js';
+import {isCenterRole,isDirectorRole,isCenterMeetingParticipant,sameCenter} from './gaius-report-policy.js';
 import {V11_KINDS, V11_KINDS_LIST,HQ_UNITS,CENTER_UNITS,FOCUS,TEACHING_UNITS,NEXUS_DEPARTMENT_FIELDS} from './gaius-v11-model.js';
 import {visitCompliance,indicators,safePerformance,compatiblePlannedActual} from './gaius-nexus-analytics.js';
 import {makeDocx,makePdf,saveDownload} from './gaius-v11-export.js';
@@ -11,6 +12,7 @@ const statusText=s=>({draft:text('ረቂቅ','Draft'),submitted:text('ለማጽ�
 const scopeLabel=s=>({organization:text('ድርጅት','Organization'),hq:'HQ',center:text('ማዕከል','Center'),personal:text('የግል','Personal')}[s]||s);
 const validFileName=name=>String(name).replace(/[^\p{L}\p{N}_.-]+/gu,'_').slice(0,85)||'GAIUS';
 let active=false,section='overview',state=null,kind='plans6',editing=null,queueBusy=false,previewUrl=null;
+let recordCenterFilter='';
 let analysisFilters={month:'',center:'',department:'',ethiopianYear:'',ethiopianMonth:'',startDate:'',endDate:'',focus:'',status:'',unit:''},selectedCenter='',selectedWeek='';
 const root=document.createElement('section');root.id='gaiusV11';root.className='v11root';root.hidden=true;
 const app=$('app'),oldMain=app.querySelector('main'),header=app.querySelector('header .actions')||app.querySelector('header');
@@ -55,7 +57,7 @@ async function open(){
   await load();
   if(epoch!==viewEpoch)return; // user signed out or closed while data loaded
   if(directorRole(my().role)&&caps().director)section='director';
-  else if(section==='director')section='overview';
+  else if(isCenterRole(my())){section='records';kind='plans6';}else if(section==='director')section='overview';
   active=true;
   app.classList.add('nexus-mode');
   root.hidden=false;
@@ -90,7 +92,7 @@ launch.onclick=()=>{
 // any preserved v10 pages. Other roles keep their existing restricted landing pages.
 window.addEventListener('gaius:nexus-session-ready',event=>{
  const identity=event.detail||{};
- if(!directorRole(identity.role)||!identity.id||autoOpenedDirectorId===identity.id)return;
+ if((!directorRole(identity.role)&&!isCenterRole(identity))||!identity.id||autoOpenedDirectorId===identity.id)return;
  autoOpenedDirectorId=identity.id;
  void open();
 });
@@ -129,7 +131,7 @@ function field(f,value=''){const [key,am,en,type,required]=f,label=escape(localL
  case 'teachingunit':control=select([['','—'],...TEACHING_UNITS.map(x=>[x,x])]);break;
  case 'centerunit':control=select([['','—'],...CENTER_UNITS.map(u=>[u.id,text(u.am,u.en)])]);break;
  case 'center':control=select([['','—'],...records().filter(r=>r.kind==='centers').map(r=>[r.data.name,r.data.name]),...(my().center?[[my().center,my().center]]:[])]);break;
- case 'user':control=`<select data-field="${key}" ${required?'required':''}>${userOptions(value)}</select>`;break;
+ case 'user':control=`<select data-field="${key}" ${required?'required':''}>${kind==='centerAttendance'&&key==='participantId'?opts([['','—'],...(state.directory||[]).filter(isCenterMeetingParticipant).map(u=>[u.id,u.name+' · '+u.center])],value):userOptions(value)}</select>`;break;
  case 'registrycenter':control=select([['','—'],...records().filter(r=>r.kind==='centers'&&r.status!=='archived').map(r=>[r.id,r.data.name+' · '+(r.data.location||'')])]);break;
  case 'city':control=select([['','—'],['addis_ababa','Addis Ababa / አዲስ አበባ'],['bishoftu','Bishoftu / Debre Zeit'],['other','Other / ሌላ']]);break;
  case 'department':control=select([['','—'],...HQ_UNITS.map(u=>[u.id,text(u.am,u.en)])]);break;
@@ -137,7 +139,7 @@ function field(f,value=''){const [key,am,en,type,required]=f,label=escape(localL
  case 'progressStatus':control=select([['','—'],['not_started',text('አልተጀመረም','Not started')],['in_progress',text('በመካሄድ ላይ','In progress')],['completed',text('ተጠናቋል','Completed')],['blocked',text('ተገድቧል','Blocked')]]);break;
  case 'level':control=select([['','—'],['C','C / ሐ'],['B','B / ለ'],['A','A / ሀ']]);break;
  case 'slot':control=select([['','—'],['1','1'],['2','2']]);break;
- case 'meeting':control=select([['','—'],['sunday','Sunday'],['biweekly','Biweekly'],['special','Special']]);break;
+ case 'meeting':control=select([['','—'],['sunday',text('የእሁድ ዋና ፕሮግራም','Sunday main program')],['biweekly',text('የሁለት ሳምንት ስብሰባ','Biweekly meeting')],['special',text('ልዩ ስብሰባ','Special meeting')],['other',text('ሌላ የማዕከል ስብሰባ','Other center meeting')]]);break;
  case 'attendance':control=select([['','—'],['present','Present'],['absent','Absent'],['late','Late'],['excused','Excused']]);break;
  case 'board':control=select([['','—'],['board','Board'],['advisory','Advisory Board']]);break;
  case 'manual':control=select([['','—'],['ministry','Ministry manual'],['teaching','Teaching roadmap'],['policy','Policy'],['other','Other']]);break;
@@ -147,7 +149,7 @@ function field(f,value=''){const [key,am,en,type,required]=f,label=escape(localL
  }
  return `<label class="v11field"><span>${label}</span>${control}</label>`;
 }
-function scopeForm(rec){const director=caps().director;
+function scopeForm(rec){const director=isDirectorRole(my())||(caps().director&&!isCenterRole(my()));
  const choices=director?[['organization',text('ለድርጅት','Organization')],['hq','HQ'],['center',text('ማዕከል','Center')],['personal',text('የግል','Personal')]]:mine()==='center'?[['center',text('የራሴ ማዕከል','My center')]]:mine()==='hq'?[['hq',text('የራሴ ክፍል','My HQ department')]]:[['personal',text('የራሴ ዕቅድና ሪፖርት','My private plans and reports')]];
  let sc=rec?.scopeType||(V11_KINDS[kind].personalOnly?'personal':choices[0][0]);if(V11_KINDS[kind].centerOnly)sc='center';
  const id=rec?.scopeId||(sc==='personal'?my().id:sc==='hq'?my().department:sc==='center'?my().center:'org');
@@ -172,7 +174,8 @@ function reportFields(rec){
 function formHTML(rec){return `<div class="v11box"><h2>${rec?text('ረቂቅ ማስተካከያ','Edit draft'):text('አዲስ መዝገብ','New record')} — ${text(V11_KINDS[kind].am,V11_KINDS[kind].en)}</h2><p class="v11guide">${text('እቅዶችና ሪፖርቶች መጀመሪያ እንደ ረቂቅ ይቀመጣሉ፤ ለማጽደቅ በተለየ አዝራር ያስገቡ። ያለ ኢንተርኔት ረቂቆች በዚህ መሣሪያ ይቀመጣሉ።','Save drafts first, then submit them for approval. Offline drafts remain on this device until synced.')}</p><form id="v11form"><div class="v11fields">${scopeForm(rec)}${reportFields(rec)}</div><div class="v11actions"><button class="btn" type="submit">${text('ረቂቅ አስቀምጥ','Save draft')}</button><button class="btn ghost" type="button" data-v="cancel">${text('ሰርዝ','Cancel')}</button></div></form></div>`;}
 function card(r){const def=V11_KINDS[r.kind]||{},data=r.data||{};const title=data.title||data.name||data.activity||data.topic||data.member||(r.kind==='visits'?records().find(x=>x.id===data.centerRecordId)?.data?.name:'')||def.am||r.kind;
  const allowEdit=(r.status==='draft'||r.status==='revision_requested')&&(caps().director||r.ownerId===my().id);
- const canReview=(caps().director||caps().canApprove)&&r.status==='submitted'&&r.scopeType!=='personal';
+ const centerProtected=r.scopeType==='center'&&['monthly','plans6','centerAttendance'].includes(r.kind);
+ const canReview=(centerProtected?isDirectorRole(my()):(caps().director||caps().canApprove))&&r.status==='submitted'&&r.scopeType!=='personal';
  const fields=r.kind==='monthly'?[['Activity',data.activity],['Planned',data.planned],['Achieved',data.achieved],['Performance',safePerformance(data.planned,data.achieved)===null?'N/A':safePerformance(data.planned,data.achieved).toFixed(1)+'%'],['Focus',data.focus],['Key Result',data.result],['Challenge',data.challenge],['Next Action',data.next]]:Object.entries(data).filter(([,v])=>v!==''&&v!=null).slice(0,4);
  const actions=[];
  if(allowEdit)actions.push(`<button type="button" data-v="edit" data-id="${r.id}">${text('አርትዕ','Edit')}</button>`);
@@ -186,8 +189,12 @@ function card(r){const def=V11_KINDS[r.kind]||{},data=r.data||{};const title=dat
 }
 function recordsScreen(){const list=myAvailableKinds(),def=V11_KINDS[kind];if(!list.includes(kind))kind=list[0]||'plans6';
  if(!list.length){frame(`<div class="v11box"><p>${text('ለዚህ ሚና የሥራ መዝገብ ማስገባት አልተፈቀደም።','No record-editing modules are assigned to this role.')}</p></div>`);return;}
- const chosen=records().filter(r=>r.kind===kind&&r.status!=='archived').sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
- frame(`<div class="v11box"><label class="v11field"><span>${text('የሥራ ክፍል ምረጥ','Choose module')}</span><select id="v11Kind">${opts(list.map(x=>[x,text(V11_KINDS[x].am,V11_KINDS[x].en)]),kind)}</select></label><p class="v11guide">${kind==='manuals'?text('የጋይዮስ መመሪያንና የትምህርት ሂደትን በሙሉ ጽሑፍ በዚህ ገጽ ይያዙ። የግል ሰነዶችን በይፋ ወደ GitHub አትጫኑ።','Import the complete manual and teaching roadmap securely here. Do not publish confidential source documents in GitHub.'):text('በአማርኛና English የሚሠራ የተዋቀረ መዝገብ።','Structured bilingual records.')}</p></div>${formHTML(editing)}<div class="v11box"><h2>${text('የተፈቀዱ መዝገቦች','Visible records')} (${chosen.length})</h2>${chosen.map(card).join('')||'<p class="v11muted">'+text('ገና መዝገብ የለም','No records yet')+'</p>'}</div>${kind==='monthly'&&caps().director?legacyReports():''}`);
+ const allChosen=records().filter(r=>r.kind===kind&&r.status!=='archived');
+ const filterable=isDirectorRole(my())&&['plans6','monthly','centerAttendance'].includes(kind);
+ const centers=[...new Set(allChosen.filter(r=>r.scopeType==='center').map(r=>r.scopeId))].sort();
+ const centerFilter=filterable?`<label class="v11field"><span>${text('ማዕከል ምረጥ','Filter by center')}</span><select id="recordCenterFilter">${opts([['',text('ሁሉም','All scopes')],...centers.map(c=>[c,c])],recordCenterFilter)}</select></label>`:'';
+ const chosen=allChosen.filter(r=>!filterable||!recordCenterFilter||(r.scopeType==='center'&&sameCenter(r.scopeId,recordCenterFilter))).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
+ frame(`<div class="v11box"><label class="v11field"><span>${text('የሥራ ክፍል ምረጥ','Choose module')}</span><select id="v11Kind">${opts(list.map(x=>[x,text(V11_KINDS[x].am,V11_KINDS[x].en)]),kind)}</select></label>${centerFilter}<p class="v11guide">${kind==='manuals'?text('የጋይዮስ መመሪያንና የትምህርት ሂደትን በሙሉ ጽሑፍ በዚህ ገጽ ይያዙ። የግል ሰነዶችን በይፋ ወደ GitHub አትጫኑ።','Import the complete manual and teaching roadmap securely here. Do not publish confidential source documents in GitHub.'):text('በአማርኛና English የሚሠራ የተዋቀረ መዝገብ።','Structured bilingual records.')}</p></div>${kind==='centerAttendance'&&!caps().centerAttendanceWrite?'':formHTML(editing)}<div class="v11box"><h2>${text('የተፈቀዱ መዝገቦች','Visible records')} (${chosen.length})</h2>${chosen.map(card).join('')||'<p class="v11muted">'+text('ገና መዝገብ የለም','No records yet')+'</p>'}</div>${kind==='monthly'&&caps().director?legacyReports():''}`);
 }
 function legacyReports(){const items=window.GAIUS_V10?.originals||[];return `<div class="v11box"><h2>${text('የv10 የጥቅምት ስድስት ኦሪጅናል ሪፖርቶች','Six preserved v10 October source reports')}</h2><p class="v11guide">${text('ይህ የታሪካዊ ጽሑፍ ነው፤ አዲስ ሪፖርት አይደለም።','Historical originals, not newly submitted reports.')}</p>${items.map((r,i)=>`<article class="v11record"><h3>${escape(localLang()==='am'?r.amTitle:r.enTitle)}</h3><details><summary>${text('ይዘት አሳይ','Show content')}</summary><pre class="v11body">${escape(localLang()==='am'?r.am:r.en)}</pre></details><button type="button" data-v="legacy-export" data-legacy="${i}" data-as="docx">Word</button> <button type="button" data-v="legacy-export" data-legacy="${i}" data-as="pdf">PDF</button></article>`).join('')}</div>`;}
 // Accessible native file inputs remain directly tappable on iPhone and desktop.
@@ -389,7 +396,8 @@ root.addEventListener('change',e=>{
  if(e.target.dataset.analyticsFilter){analysisFilters[e.target.dataset.analyticsFilter]=e.target.value;selectedCenter='';render();return;}
  if(e.target.id==='v11FileScope'){const unit=$('v11FileUnit');if(unit)unit.value=e.target.value==='personal'?my().id:e.target.value==='organization'?'org':'';return;}
  if(e.target.id==='v11DepartmentType'){const group=$('v11DeptExtras');if(group){group.innerHTML=(NEXUS_DEPARTMENT_FIELDS[e.target.value]||[]).map(f=>field(f,editing?.data?.[f[0]]??'')).join('');}return;}
- if(e.target.id==='v11Kind'){kind=e.target.value;editing=null;render();}else if(e.target.id==='v11Scope'){const x=$('v11ScopeId');if(x)x.value=e.target.value==='personal'?my().id:e.target.value==='hq'?my().department||'':e.target.value==='center'?my().center||'':'org';}});
+ if(e.target.id==='recordCenterFilter'){recordCenterFilter=e.target.value;render();return;}
+ if(e.target.id==='v11Kind'){kind=e.target.value;recordCenterFilter='';editing=null;render();}else if(e.target.id==='v11Scope'){const x=$('v11ScopeId');if(x)x.value=e.target.value==='personal'?my().id:e.target.value==='hq'?my().department||'':e.target.value==='center'?my().center||'':'org';}});
 root.addEventListener('click',e=>{const b=e.target.closest('[data-v]');if(!b)return;
  withBusy(async()=>{const op=b.dataset.v,id=b.dataset.id;
  if(op==='close'){close();return;}
