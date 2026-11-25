@@ -187,3 +187,31 @@ test('shared governance recovers after suspension and retries failed authorizati
  fail=false;await page.locator('#governancePanel').getByRole('button',{name:'Retry'}).click();
  await expect(page.locator('#governancePanel')).toContainText('Gerji');
 });
+
+test('rapid authorized navigation reuses one state request; explicit refresh still revalidates',async({page})=>{
+ await page.route('**/gaius-config.js',route=>route.fulfill({contentType:'application/javascript',body:"window.GAIUS_CONFIG={apiUrl:location.origin+'/mock-api'};"}));
+ const me={id:'fixture',name:'Synthetic staff',username:'fixture',role:'staff',accountStatus:'active',adminPermissions:['documents','announcements'],_v:1};
+ let requests=0;
+ const snapshot={me,authorization:{legacyPages:['profilePage','attendance','workspace','documents','board']},directory:[me],former:[],users:[],reports:[],plans:[],reviews:[],comments:[],attendance:[],projects:[],announcements:[],documents:[],audit:[],v11:{records:[],files:[],capabilities:{director:false,allowedKinds:['plans6','monthly'],readableKinds:['plans6','monthly'],canUploadFile:false,defaultScopeType:'personal',defaultScopeId:me.id,hqReports:false}},services:{mediaUploads:true,maxFileBytes:1048576}};
+ await page.route('**/mock-api/**',async route=>{const path=new URL(route.request().url()).pathname;
+ if(path.endsWith('/info'))return route.fulfill({json:{bootstrap:false,emailRecovery:false}});
+ if(path.endsWith('/state')){requests++;return route.fulfill({json:snapshot});}
+ return route.fulfill({status:400,json:{error:'unknown'}});
+ });
+ await page.addInitScript(()=>{localStorage.gLang='en';sessionStorage.setItem('gaius.v10.session:'+location.origin+'/mock-api','synthetic-token');});
+ await page.goto('http://127.0.0.1:4173/index.html');
+ await expect(page.locator('#who')).toContainText('Synthetic staff');
+ const initial=requests;
+ for(const id of ['documents','board','workspace','profilePage']){await page.locator('[data-page="'+id+'"]').click();await expect(page.locator('#'+id)).toBeVisible();}
+ expect(requests).toBe(initial);
+ await page.locator('#v11launch').click();
+ await expect(page.locator('#gaiusV11 .v11nav')).toBeVisible();
+ for(const section of ['records','overview','reference']){await page.locator('#gaiusV11 [data-section="'+section+'"]').click();await expect(page.locator('#gaiusV11 [data-section="'+section+'"]')).toHaveClass('on');}
+ expect(requests).toBe(initial);
+ await page.locator('#gaiusV11 [data-v="close"]').click();
+ snapshot.authorization.legacyPages=['profilePage','attendance','workspace'];me.adminPermissions=[];
+ await page.locator('#modeLine [data-action="refresh"]').click();
+ await expect(page.locator('[data-page="documents"]')).toBeHidden();
+ expect(requests).toBe(initial+1);
+ console.log('PERFORMANCE CHECK: seven page changes and Nexus entry used 0 additional state requests; explicit refresh used 1.');
+});
