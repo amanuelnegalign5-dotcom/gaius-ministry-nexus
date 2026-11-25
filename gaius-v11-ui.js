@@ -503,7 +503,8 @@ root.addEventListener('click',e=>{const b=e.target.closest('[data-v]');if(!b)ret
  if(op==='reconnect'){if(!navigator.onLine)throw Error('offline');if(!store.hasSession()){$('logout').click();return;}await update();if(vault.vaultUnlocked(my().id))await sync();return;}
  if(op==='extended'){if(state.offlineOnly||!store.hasSession())throw Error('offline');const live=await store.state();if(live.me.id!==my().id)throw Error('forbidden');if(b.dataset.enable==='yes'&&!confirm(text('ይህ የግል የታመነ መሣሪያ ነው?','Enable encrypted offline records on this trusted device?')))return;await vault.setExtendedWorkspace(live,b.dataset.enable==='yes');await render();return;}
  if(op==='editMonday'){mondayEdit=state.mondayRecords?.find(r=>r.id===id);if(!mondayEdit)throw Error('missing');section='offline';await render();return;}
- if(op==='close'){if(!state.offlineOnly)close();return;}
+ if(op==='close'&&state.offlineOnly)return;
+ if(op==='close'){close();return;}
  if(op==='showCenter'){selectedCenter=b.dataset.center;section='analytics';render();return;}
  if(op==='openKind'){if(state.offlineOnly&&!myAvailableKinds().includes(b.dataset.kind)&&!state.onlineKinds?.includes(b.dataset.kind))throw Error(text('ይህ ክፍል Online ይፈልጋል','This module requires online access'));kind=b.dataset.kind;editing=null;section='records';await render();return;}
  if(op==='completeVisit'){if(state.offlineOnly)throw Error('offline');const item=records().find(r=>r.id===id);if(!item)throw Error('missing');if(!item.data.actualDate||!item.data.observations)throw Error(text('መጀመሪያ የተጎበኘበትን ቀንና የታዩትን ነገሮች በEdit ሙላ','Edit visit to enter actual date and observations first'));await store.command('v11.completeVisit',{id,version:item._v,actualDate:item.data.actualDate,observations:item.data.observations});await update();return;}
