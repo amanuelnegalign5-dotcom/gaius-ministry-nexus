@@ -73,6 +73,7 @@ async function open(){
  }finally{opening=false;launch.disabled=false;}
 }
 function close(){
+ window.dispatchEvent(new Event('gaius:nexus-governance-close'));
  if(previewUrl){URL.revokeObjectURL(previewUrl);previewUrl=null;}
  ++viewEpoch;
  active=false;
@@ -90,7 +91,8 @@ launch.onclick=()=>{
 // any preserved v10 pages. Other roles keep their existing restricted landing pages.
 window.addEventListener('gaius:nexus-session-ready',event=>{
  const identity=event.detail||{};
- if(!directorRole(identity.role)||!identity.id||autoOpenedDirectorId===identity.id)return;
+ if(!identity.id||autoOpenedDirectorId===identity.id)return;
+ if(!directorRole(identity.role)&&!['center_senior_leader','center_leader','center_department_leader','potential_center_leader','potential_department_leader'].includes(identity.role))return;
  autoOpenedDirectorId=identity.id;
  void open();
 });
@@ -102,10 +104,10 @@ app.addEventListener('click',e=>{if(active&&(e.target.closest('button.nav')||e.t
 window.addEventListener('online',()=>{if(active){alertMsg(text('ኢንተርኔት ተመልሷል፤ ያልተላኩ ረቂቆችን መላክ ይችላሉ','Online: pending drafts can now sync'));}});
 const my=()=>state?.me||{};const caps=()=>state?.v11?.capabilities||{};const records=()=>state?.v11?.records||[];
 const mine=()=>caps().defaultScopeType||(my().center?'center':my().department?'hq':'personal');
-const appStrings={director:['የዳይሬክተር ሥራ','Director workspace'],analytics:['የማዕከላት ትንታኔ','Center analytics'],overview:['ዋና እይታ','Overview'],records:['ሥራ መዝገቦች','Operations'],files:['የሰነድ ማከማቻ','File uploads'],offline:['ያልተላኩ ረቂቆች','Offline drafts'],reference:['የድርጅት ስሞች','Official names']};
+const appStrings={director:['የዳይሬክተር ሥራ','Director workspace'],analytics:['የማዕከላት ትንታኔ','Center analytics'],overview:['ዋና እይታ','Overview'],records:['ሥራ መዝገቦች','Operations'],files:['የሰነድ ማከማቻ','File uploads'],offline:['ያልተላኩ ረቂቆች','Offline drafts'],governance:['የጋይዮስ አስተዳደር','Governance'],reference:['የድርጅት ስሞች','Official names']};
 const tr=s=>appStrings[s]?(localLang()==='am'?appStrings[s][0]:appStrings[s][1]):s;
 function frame(content){root.innerHTML=`<div class="v11wrap"><div class="v11top"><div class="v11identity"><img class="v11logo" src="./icons/official-logo.jpg" alt="Gaius Ministry logo"><div><h1>Gaius Nexus <small>v11.2.2</small></h1><p>${text('የድርጅት አመራር፣ እቅድ፣ ሪፖርትና ክትትል','Ministry leadership, planning, reporting and follow-up')}</p></div></div><button type="button" class="btn ghost" data-v="close">${text('ወደ v10 ገጾች','Back to existing pages')}</button></div>
-  <div class="v11nav">${Object.keys(appStrings).filter(x=>x==='director'?caps().director:x==='analytics'?(caps().director||caps().oversight):x==='records'?myAvailableKinds().length>0:x==='files'?(caps().canUploadFile||(state?.v11?.files||[]).length>0):true).map(x=>`<button class="${section===x?'on':''}" type="button" data-v="section" data-section="${x}">${tr(x)}</button>`).join('')}</div><div id="v11notice" class="v11notice" hidden></div><div class="v11content">${content}</div></div>`;}
+  <div class="v11nav">${Object.keys(appStrings).filter(x=>x==='director'?caps().director:x==='analytics'?(caps().director||caps().oversight):x==='records'?myAvailableKinds().length>0:x==='files'?(caps().canUploadFile||(state?.v11?.files||[]).length>0):x==='governance'?store.shared&&!state.offlineOnly&&(caps().director||mine()==='center'||!!my().center||caps().hqReports):true).map(x=>`<button class="${section===x?'on':''}" type="button" data-v="section" data-section="${x}">${tr(x)}</button>`).join('')}</div><div id="v11notice" class="v11notice" hidden></div><div class="v11content">${content}</div></div>`;}
 function tile(title,value,desc=''){return `<div class="v11tile"><span>${escape(title)}</span><strong>${escape(value)}</strong><small>${escape(desc)}</small></div>`;}
 function dashboard(){const all=records().filter(r=>r.kind!=='centers'&&r.kind!=='centerUnits');const approved=all.filter(r=>r.status==='approved'),pending=all.filter(r=>r.status==='submitted');
  const centers=records().filter(r=>r.kind==='centers'),month=records().filter(r=>r.kind==='monthly'),pulses=records().filter(r=>r.kind==='followups');
@@ -298,7 +300,8 @@ function analyticsScreen(){
 }
 async function render(){if(!active)return;
  const appNow=localLang();launch.textContent='✦ '+(appNow==='am'?'ጋይዮስ ኔክሰስ':'Gaius Nexus');
- if(section==='director')directorScreen();else if(section==='analytics')analyticsScreen();else if(section==='overview')dashboard();else if(section==='records')recordsScreen();else if(section==='files')filesScreen();else if(section==='offline')await offlineScreen();else reference();
+ window.dispatchEvent(new Event('gaius:nexus-governance-close'));
+ if(section==='governance'){frame('<div id="v11GovernanceMount"></div>');window.dispatchEvent(new Event('gaius:nexus-governance-open'));}else if(section==='director')directorScreen();else if(section==='analytics')analyticsScreen();else if(section==='overview')dashboard();else if(section==='records')recordsScreen();else if(section==='files')filesScreen();else if(section==='offline')await offlineScreen();else reference();
  if(state.offlineOnly)alertMsg(text('ያለ ኢንተርኔት የረቂቅ ሁኔታ ብቻ ነው። የኦንላይን መረጃ አልተጫነም።','Offline draft-only mode; no live organizational data is loaded.'));
  await loadMediaPreviews();}
 async function loadMediaPreviews(){for(const img of root.querySelectorAll('img[data-v11-media]')){const f=state.v11.files?.find(f=>f.id===img.dataset.v11Media);if(!f||!f.type.startsWith('image/'))continue;try{const blob=await store.downloadFile(f.id);const url=URL.createObjectURL(blob);img.src=url;img.hidden=false;img.onload=()=>setTimeout(()=>URL.revokeObjectURL(url),1000*60*2);}catch{}}}
