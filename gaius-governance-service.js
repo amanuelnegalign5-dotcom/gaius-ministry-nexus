@@ -1,3 +1,4 @@
+import {grantContext} from './gaius-grant-bridge.js';
 import {eligibleDelegate,roleClass,classifiedGrantOptions,classifiedGrant,validCenterAttendance,sameAttendanceWeek,centerRosterManager,centerLijochManager,centerMentorshipManager} from './gaius-report-policy.js';
 // Server-only governance extension. Never store real profiles in public source.
 export const GOVERNANCE_CATALOG={
@@ -86,21 +87,23 @@ export function governanceService(db,u,action,p,now,idFactory,catalog,media=null
  const actTypes=['view','create','edit','approve','archive','export'];
  const modules=[...Object.values(kindMap),'hq_plans','hq_reports','center_plans','center_reports','monday_program','monday_attendance','department_catalog','succession','advisory_board','documents','alumni','annual_events','fundraising','finance','partnerships','evaluation','media','administration','user_management','analytics','teaching'];
  const all=()=>db.all('governance_records');
- const centers=()=>all().filter(r=>r.kind==='center'&&r.status!=='archived');
+ const ctx=grantContext(db,u,now);
+ const centers=()=>ctx.centers;
  const resolveCenter=x=>{const key=x?.center;if(!key)return undefined;const rows=centers();const direct=rows.find(c=>c.id===key);if(direct)return direct;const matching=rows.filter(c=>c.name===key||[c.direction,c.name].filter(Boolean).join(' — ')===key);return matching.length===1?matching[0]:undefined;};
  const date=v=>typeof v==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(v)&&Number.isFinite(Date.parse(v))&&new Date(v+'T00:00:00Z').toISOString().slice(0,10)===v;
  const stamp=v=>typeof v==='string'&&/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/.test(v)&&Number.isFinite(Date.parse(v));
- const grant=(module,op,r)=>hq(u)&&db.all('governance_grants').some(g=>g.recipientId===u.id&&g.status==='active'&&!g.revokedAt&&director(db.one('users',g.issuerId))&&classifiedGrant(u,g.modules,g.actions)&&g.modules.includes(module)&&g.actions.includes(op)&&(!g.startsAt||Date.parse(g.startsAt)<=now)&&(!g.endsAt||now<Date.parse(g.endsAt))&&(roleClass(u)!=='center'||g.scope===resolveCenter(u)?.id)&&(g.scope==='organization'||g.scope===r.region||g.scope===r.centerId||g.scope===r.id));
+ const grant=(module,op,r)=>ctx.allows(module,op,{centerId:r.kind==='center'?r.id:r.centerId,region:r.region,scopeType:r.kind==='center'||r.centerId?'center':'organization'});
  const belongs=r=>{const c=resolveCenter(u);return !!c&&(r.centerId===c.id||r.kind==='center'&&r.id===c.id);};
  const canView=r=>director(u)||grant(kindMap[r.kind],'view',r)||(centerRole(u)&&belongs(r)&&((['center','progress'].includes(r.kind)||r.kind==='attendance'&&(centerRosterManager(u)||r.participantId===u.id))||r.kind==='child'&&(centerLijochManager(u)||centerMentorshipManager(u)||r.mentorId===u.id)||r.kind==='mentee'&&(centerMentorshipManager(u)||r.mentorId===u.id)));
  const canWrite=(r,op)=>director(u)&&region(u)===r.region||grant(kindMap[r.kind],op,r)||(centerRole(u)&&belongs(r)&&(r.kind==='child'&&centerLijochManager(u)||r.kind==='mentee'&&centerMentorshipManager(u)||r.kind==='progress'&&leaders.includes(u.role)&&r.ownerId===u.id||r.kind==='attendance'&&centerRosterManager(u)));
  const canPhoto=r=>director(u)||centerRole(u)&&belongs(r)&&(centerLijochManager(u)||r.mentorId===u.id);
  const audit=(event,target)=>db.put('audit',{id:idFactory(),actorId:u.id,action:event,target,at:new Date(now).toISOString()});
- const safeRecord=r=>{const {photoId,...rest}=r;return {...rest,hasPhoto:!!photoId};};
+ const safeRecord=r=>{const {photoId,...rest}=r;return {...rest,hasPhoto:!!photoId,actions:{edit:canWrite(r,'edit'),photo:canPhoto(r),setPhoto:canPhoto(r)&&canWrite(r,'edit')}};};
  check(live(u));
  if(action==='governance.list'){
   const records=all().filter(canView).map(safeRecord);
-  return {records,grants:db.all('governance_grants').filter(g=>director(u)||hq(u)&&g.recipientId===u.id&&classifiedGrant(u,g.modules,g.actions)).map(g=>({...g,effectiveStatus:g.status==='revoked'?'revoked':!classifiedGrant(db.one('users',g.recipientId),g.modules,g.actions)?'ineligible':g.endsAt&&Date.parse(g.endsAt)<=now?'expired':g.startsAt&&Date.parse(g.startsAt)>now?'scheduled':'active'})),catalog:director(u)?catalog:null,capabilities:{director:director(u),region:region(u),senior:senior(u),centerId:resolveCenter(u)?.id||'',centerRole:centerRole(u),hq:hq(u),canManageChildren:centerLijochManager(u)||director(u),canManageAttendance:centerRosterManager(u)||director(u),canManageMentorship:centerMentorshipManager(u)||director(u),canMentor:leaders.includes(u.role)},participants:db.all('users').filter(x=>live(x)&&[...leaders,...potential].includes(x.role)&&(director(u)||!!resolveCenter(u)&&resolveCenter(x)?.id===resolveCenter(u)?.id)).map(x=>({id:x.id,name:x.name,centerId:resolveCenter(x)?.id||''})),eligibleHQ:director(u)?db.all('users').filter(hq).map(x=>({id:x.id,name:x.name,role:x.role,classification:roleClass(x),centerId:roleClass(x)==='center'?(resolveCenter(x)?.id||''):'',...classifiedGrantOptions(x)})):[],mentors:db.all('users').filter(x=>live(x)&&leaders.includes(x.role)&&(director(u)||resolveCenter(x)?.id===resolveCenter(u)?.id&&!!resolveCenter(u))).map(x=>({id:x.id,name:x.name,centerId:resolveCenter(x)?.id||''}))};
+  const createTargets=Object.fromEntries(kinds.map(kind=>[kind,[...centers().map(c=>({region:c.region,centerId:c.id})),...['center','project','committee','meeting','progress'].includes(kind)?['country','international'].map(region=>({region,centerId:''})):[]].filter(t=>canWrite({kind,region:t.region,centerId:t.centerId,id:kind==='center'?t.centerId:'',ownerId:u.id},'create'))]));
+  return {records,grants:db.all('governance_grants').filter(g=>director(u)||hq(u)&&g.recipientId===u.id&&classifiedGrant(u,g.modules,g.actions)).map(g=>({...g,effectiveStatus:g.status==='revoked'?'revoked':!classifiedGrant(db.one('users',g.recipientId),g.modules,g.actions)||!director(db.one('users',g.issuerId))?'ineligible':g.endsAt&&Date.parse(g.endsAt)<=now?'expired':g.startsAt&&Date.parse(g.startsAt)>now?'scheduled':'active'})),catalog:director(u)?catalog:null,capabilities:{createTargets,visibleKinds:[...new Set([...records.map(r=>r.kind),...kinds.filter(k=>createTargets[k].length)])],director:director(u),region:region(u),senior:senior(u),centerId:resolveCenter(u)?.id||'',centerRole:centerRole(u),hq:hq(u),canManageChildren:centerLijochManager(u)||director(u),canManageAttendance:centerRosterManager(u)||director(u),canManageMentorship:centerMentorshipManager(u)||director(u),canMentor:leaders.includes(u.role)},participants:db.all('users').filter(x=>live(x)&&[...leaders,...potential].includes(x.role)&&(director(u)||!!resolveCenter(u)&&resolveCenter(x)?.id===resolveCenter(u)?.id)).map(x=>({id:x.id,name:x.name,centerId:resolveCenter(x)?.id||''})),eligibleHQ:director(u)?db.all('users').filter(hq).map(x=>({id:x.id,name:x.name,role:x.role,classification:roleClass(x),centerId:roleClass(x)==='center'?(resolveCenter(x)?.id||''):'',...classifiedGrantOptions(x)})):[],mentors:db.all('users').filter(x=>live(x)&&leaders.includes(x.role)&&(director(u)||resolveCenter(x)?.id===resolveCenter(u)?.id&&!!resolveCenter(u))).map(x=>({id:x.id,name:x.name,centerId:resolveCenter(x)?.id||''}))};
  }
  if(action==='governance.grant'){
   check(director(u));const recipient=db.one('users',str(p.recipientId));check(hq(recipient),'recipientInvalid',400);
@@ -150,6 +153,7 @@ export function governanceService(db,u,action,p,now,idFactory,catalog,media=null
  check(validRegion(reg),'regionInvalid',400);
  const row={id:old?.id||idFactory(),kind,region:reg,centerId:kind==='center'?'':centerId,ownerId:old?.ownerId||u.id,version:(old?.version||0)+1,updatedAt:new Date(now).toISOString(),createdAt:old?.createdAt||new Date(now).toISOString(),name:str(p.name),status:str(p.status)||'active'};
  check(canWrite({...row,mentorId:old?.mentorId||str(p.mentorId)},old?'edit':'create'));
+ if(old)check(canView(old)||canWrite(old,'edit'));
  if(['child','mentee','attendance'].includes(kind)||centerId)check(c&&c.region===reg,'centerInvalid',400);
  check(row.name,'nameRequired',400);
  if(kind==='center'){
