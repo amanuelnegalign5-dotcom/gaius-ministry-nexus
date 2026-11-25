@@ -22,11 +22,15 @@ export function offlineSnapshot(state,at=Date.now()){
  for(const k of OFFLINE_KINDS){const scopes=(c.createScopes?.[k]||[]).filter(x=>x.scopeType==='personal'||x.scopeType==='center'||x.scopeType==='hq'||x.scopeType==='organization');if(scopes.length)createScopes[k]=scopes.map(({scopeType,scopeId,label})=>({scopeType,scopeId,label}));}
  // Keep only the authorized attendance roster. No other directory or historical records.
  const participants=createScopes.centerAttendance? (c.attendanceParticipants||[]).map(({id,name,center})=>({id,name,center})):[];
- return {at,mondayRoster:state.authorization?.offlineMondayRoster||[],me:{id:me.id,role:me.role,name:me.name,department:me.department,center:me.center},createScopes,participants};
+ const lease=state.authorization?.offlineLease;
+ const issued=lease?.issuedAt??at;
+ const deadline=key=>Number.isFinite(lease?.[key])?Math.min(lease[key],issued+30*MAX_AGE):issued+MAX_AGE;
+ return {at:issued,operationsUntil:deadline('operationsUntil'),attendanceUntil:deadline('attendanceUntil'),mondayRoster:state.authorization?.offlineMondayRoster||[],me:{id:me.id,role:me.role,name:me.name,department:me.department,center:me.center},createScopes,participants};
 }
-export function snapshotValid(s,owner,now=Date.now()){return !!s?.me&&s.me.id===owner&&Number.isFinite(s.at)&&s.at<=now&&now-s.at<MAX_AGE;}
+export function categoryValid(s,owner,category,now=Date.now()){const end=s?.[category+'Until']??((s?.at||0)+MAX_AGE);return !!s?.me&&s.me.id===owner&&Number.isFinite(s.at)&&s.at<=now&&Number.isFinite(end)&&now<end&&end<=s.at+30*MAX_AGE;}
+export function snapshotValid(s,owner,now=Date.now()){return categoryValid(s,owner,'operations',now)||categoryValid(s,owner,'attendance',now);}
 export function draftAllowed(s,p,now=Date.now()){
- if(!snapshotValid(s,s?.me?.id,now)||p.id||p.version||p.data?.fileId)return false;
+ if(!categoryValid(s,s?.me?.id,['centerAttendance','mondayAttendance'].includes(p.kind)?'attendance':'operations',now)||p.id||p.version||p.data?.fileId)return false;
  if(p.kind==='mondayAttendance')return !!s.mondayRoster?.some(x=>x.id===p.data?.personId)&&['present','absent','permitted','late'].includes(p.data.status)&&p.data.programType==='regular'&&/^\d{4}-\d{2}-\d{2}$/.test(p.data.date)&&new Date(p.data.date+'T00:00:00Z').getUTCDay()===1&&!p.data.note;
  if(!OFFLINE_KINDS.includes(p.kind))return false;
  if(!s.createScopes[p.kind]?.some(x=>x.scopeType===p.scopeType&&x.scopeId===p.scopeId))return false;
@@ -56,8 +60,9 @@ export async function refreshVault(state){
  const box=await seal(v.key,snapshot,'snapshot:'+v.owner);
  if(unlocked!==v)return;await put({...meta,box});if(unlocked===v)v.snapshot=snapshot;
 }
-export function offlineState(owner){const v=unlocked;if(!v||v.owner!==owner||!snapshotValid(v.snapshot,owner))return null;const s=v.snapshot;return {me:s.me,directory:[],offlineOnly:true,v11:{records:[],files:[],capabilities:{createScopes:s.createScopes,allowedKinds:Object.keys(s.createScopes),readableKinds:Object.keys(s.createScopes),attendanceParticipants:s.participants,offlineMondayRoster:s.mondayRoster||[]}}};}
-export function mondayRoster(owner){const v=unlocked;return v?.owner===owner&&snapshotValid(v.snapshot,owner)?v.snapshot.mondayRoster||[]:[];}
+export function offlineState(owner){const v=unlocked;if(!v||v.owner!==owner||!snapshotValid(v.snapshot,owner))return null;const s=v.snapshot,createScopes=Object.fromEntries(Object.entries(s.createScopes).filter(([k])=>categoryValid(s,owner,k==='centerAttendance'?'attendance':'operations'))),attendance=categoryValid(s,owner,'attendance');return {me:s.me,directory:[],offlineOnly:true,v11:{records:[],files:[],capabilities:{createScopes,allowedKinds:Object.keys(createScopes),readableKinds:Object.keys(createScopes),attendanceParticipants:attendance?s.participants:[],offlineMondayRoster:attendance?s.mondayRoster||[]:[]}}};}
+export function vaultLease(owner){const v=unlocked;if(v?.owner!==owner)return null;const s=v.snapshot;return {operationsUntil:s.operationsUntil??s.at+MAX_AGE,attendanceUntil:s.attendanceUntil??s.at+MAX_AGE};}
+export function mondayRoster(owner){const v=unlocked;return v?.owner===owner&&categoryValid(v.snapshot,owner,'attendance')?v.snapshot.mondayRoster||[]:[];}
 export async function queueDraft(owner,payload,requestId=crypto.randomUUID()){
  const v=unlocked;if(!v||v.owner!==owner||!draftAllowed(v.snapshot,payload))throw Error('Offline draft not permitted; reconnect or unlock offline storage');
  const id='draft:'+owner+':'+requestId;
