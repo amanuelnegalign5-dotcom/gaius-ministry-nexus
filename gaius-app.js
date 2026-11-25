@@ -1,3 +1,4 @@
+import * as vault from './gaius-offline-vault.js';
 import {classifiedPermissions,roleClass,isCenterAccount,eligibleGrantRecipient} from './gaius-report-policy.js';
 import * as store from './gaius-store.js';
 import { CENTER_UNITS } from './gaius-v11-model.js';
@@ -13,6 +14,11 @@ saveAttendanceBatch|የመረጥኳቸውን አስቀምጥ|Save selected atten
 unmarked|ያልተመዘገበ|Unmarked
 refresh|አድስ|Refresh
 forgotPassword|የይለፍ ቃል ረሳሁ|Forgot password?
+offlineLoginInvalid|የOffline ይለፍ ሐረግ ልክ አይደለም።|Incorrect offline passphrase.
+offlineLoginUnavailable|በዚህ መሣሪያ Offline መግቢያ አልነቃም። Online ግቡና Offline Mode ያንቁ።|Offline sign-in is not enrolled on this device. Sign in online and enable offline mode.
+offlineLoginExpired|የOffline ፈቃድ ጊዜ አብቅቷል። Online ይግቡ፤ ረቂቆችዎ ተጠብቀዋል።|Offline access expired. Sign in online; your encrypted drafts are retained.
+offlineLoginThrottled|ብዙ የተሳሳተ ሙከራ። ቆይተው ይሞክሩ።|Too many attempts. Try again later.
+offlineLoginBusy|መግቢያ እየተፈተሸ ነው።|Sign-in is already being checked.
 resetTitle|የይለፍ ቃል መመለሻ|Password recovery
 recoveryInstructions|በመለያዎ የተመዘገበውን ኢሜይል ያስገቡ። ኢሜይሉ የታወቀና የጸደቀ ከሆነ ለ10 ደቂቃ የሚቆይ 8 አሃዝ ኮድ ይላካል።|Enter the email address on your account. If the account is eligible, an 8-digit code valid for 10 minutes will be emailed.
 resetEmail|የመለያዬ ኢሜይል|Account email address
@@ -288,13 +294,19 @@ async function mutate(action,payload,done){
  await refresh();notification('saved');return result;
 }
 function authText(){
+ const offline=store.shared&&!navigator.onLine;
+ $('offlineLoginBtn').textContent=lang==='am'?'Offline ግባ':'Sign in offline';
+ $('offlineLoginHelp').textContent=lang==='am'?'በዚህ መሣሪያ Offline Mode አንቅተው ከሆነ የተመዘገበውን Username እና የOffline ይለፍ ሐረግ ይጠቀሙ።':'For offline sign-in, enter your enrolled username and separate offline passphrase (enable it online first).';
+ vis('offlineLoginBtn',store.shared&&mode==='login');vis('offlineLoginHelp',store.shared&&mode==='login');
  $('authScope').textContent=t(store.shared?'sharedExplain':'localExplain');
  $('modeLine').innerHTML=h(t(store.shared?'sharedMode':'localMode'))+' · '+button('refresh','refresh',{},'refreshBtn');
  $('authInstructions').textContent=mode==='complete'?t('completeHelp'):bootstrap?t(store.shared?'setupShared':'setupLocal'):t('requestHelp');
  vis('authInstructions',['register','complete'].includes(mode));vis('directorBox',mode==='register'&&directors.includes(val('regRole'))&&(store.shared&&bootstrap));
  $('directorBox').querySelector('label').textContent=t(store.shared?'setupKeyLabel':'localCodeLabel');
- $('authBtn').textContent=t(mode==='login'?'login':mode==='complete'?'complete':'register');
- vis('forgotPassword',mode==='login');
+ $('authBtn').textContent=offline&&mode==='login'?(lang==='am'?'Offline ግባ':'Sign in offline'):t(mode==='login'?'login':mode==='complete'?'complete':'register');
+ $('registerTab').disabled=offline||mode==='complete';
+ if(offline)vis('offlineLoginBtn',false);
+ vis('forgotPassword',mode==='login'&&!offline);
  $('resetPanel').querySelector('.notice').textContent=t(!store.shared?'emailRequiresServer':!emailRecovery?'emailNotConfigured':'recoveryInstructions');
 }
 function setMode(v){
@@ -339,9 +351,20 @@ on('directorSendOtp',async()=>{
  await store.requestDirectorCode(val('regRole'),val('regEmail'),val('directorCode'));
  alert(lang==='am'?'የ8 አሃዝ ኮዱን ከEmail ይመልከቱ። በ10 ደቂቃ ውስጥ ይጠቀሙ።':'Check your email for the eight-digit code. Use it within 10 minutes.');
 });
+async function localLogin(credentials){
+ if(!store.shared||mode!=='login')return;
+ const identity=await vault.offlineLogin(credentials.username,credentials.password);
+ store.clearSession();window.GAIUS_NAV_CONTEXT=null;view=null;
+ sessionStorage.setItem('gaius.offline.localSession',identity.id);
+ sessionStorage.setItem('gaius.v11.offlineIdentity',JSON.stringify({at:Date.now(),me:{id:identity.id}}));
+ $('app').dataset.mondayAccess='no';$('who').textContent=identity.name+' · '+role(identity.role);set('password','');vis('auth',false);vis('app',true);
+ window.dispatchEvent(new CustomEvent('gaius:offline-login',{detail:{id:identity.id}}));
+}
+on('offlineLoginBtn',()=>localLogin({username:val('username').trim(),password:val('password')}));
+window.addEventListener('online',authText);window.addEventListener('offline',authText);
 on('authBtn',async()=>{
  const credentials={username:val('username').trim(),password:val('password')};
- if(mode==='login'){await store.login(credentials);await refresh();return;}
+ if(mode==='login'){if(store.shared&&!navigator.onLine){await localLogin(credentials);return;}await store.login(credentials);set('password','');await refresh();return;}
  if(credentials.password!==val('confirmPassword'))throw Error('mismatch');
  requiredCenterInput();if($('regCenter').required&&!val('regCenter').trim())throw Error('centerRequired');
  const data={...regProfile(),...credentials,role:val('regRole'),department:val('regDept'),photo:await fileData($('regPhoto').files[0])||current()?.photo||'',setupKey:val('directorCode'),directorEmailCode:val('directorOtp')};
@@ -370,7 +393,7 @@ on('finishReset',async()=>{
 });
 on('loginTab',async()=>{if(mode==='complete'){try{await store.logout();}finally{signedOut();}return;}setMode('login');});
 on('registerTab',async()=>{await info();setMode('register');});
-on('logout',async()=>{try{await store.logout();}finally{signedOut();}await info();});
+on('logout',async()=>{try{if(navigator.onLine&&store.hasSession())await store.logout();}finally{signedOut();}if(navigator.onLine)await info();});
 const centerRegistrationRoles=new Set(['center_senior_leader','center_leader','potential_center_leader','center_department_leader','potential_department_leader','volunteer']);
 function requiredCenterInput(){const isCenter=centerRegistrationRoles.has(val('regRole'));
  $('regCenter').required=isCenter;$('regCenterStar').textContent=isCenter?'*':'';
@@ -872,7 +895,7 @@ async function start(){
  translate();setMode('login');associateLabels();requiredCenterInput();
  try{await info();if(store.hasSession())await refresh();}
  catch(e){
-  if(e.message==='offline'&&store.shared&&(store.hasSession()||localStorage.getItem('gaius.offline.device'))){
+  if(e.message==='offline'&&store.shared&&store.hasSession()){
    // Offline reload opens only the safe v11 draft workspace, never the
    // server-governed v10 pages or confidential backend records.
    let marker=null;try{marker=JSON.parse(sessionStorage.getItem('gaius.v11.offlineIdentity')||localStorage.getItem('gaius.offline.device')||'null');}catch{}
