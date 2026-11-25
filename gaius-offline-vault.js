@@ -1,3 +1,4 @@
+import {validCenterAttendance} from './gaius-report-policy.js';
 // Passphrase-protected offline vault. No server tokens, photos or live records are stored.
 export const OFFLINE_KINDS=['monthly','plans6','initiatives','tasks','teaching','updates','centerAttendance'];
 export const MAX_AGE=24*60*60*1000;
@@ -21,13 +22,15 @@ export function offlineSnapshot(state,at=Date.now()){
  for(const k of OFFLINE_KINDS){const scopes=(c.createScopes?.[k]||[]).filter(x=>x.scopeType==='personal'||x.scopeType==='center'||x.scopeType==='hq'||x.scopeType==='organization');if(scopes.length)createScopes[k]=scopes.map(({scopeType,scopeId,label})=>({scopeType,scopeId,label}));}
  // Keep only the authorized attendance roster. No other directory or historical records.
  const participants=createScopes.centerAttendance? (c.attendanceParticipants||[]).map(({id,name,center})=>({id,name,center})):[];
- return {at,me:{id:me.id,role:me.role,name:me.name,department:me.department,center:me.center},createScopes,participants};
+ return {at,mondayRoster:state.authorization?.offlineMondayRoster||[],me:{id:me.id,role:me.role,name:me.name,department:me.department,center:me.center},createScopes,participants};
 }
 export function snapshotValid(s,owner,now=Date.now()){return !!s?.me&&s.me.id===owner&&Number.isFinite(s.at)&&s.at<=now&&now-s.at<MAX_AGE;}
 export function draftAllowed(s,p,now=Date.now()){
- if(!snapshotValid(s,s?.me?.id,now)||!OFFLINE_KINDS.includes(p.kind)||p.id||p.version||p.data?.fileId)return false;
+ if(!snapshotValid(s,s?.me?.id,now)||p.id||p.version||p.data?.fileId)return false;
+ if(p.kind==='mondayAttendance')return !!s.mondayRoster?.some(x=>x.id===p.data?.personId)&&['present','absent','permitted','late'].includes(p.data.status)&&p.data.programType==='regular'&&/^\d{4}-\d{2}-\d{2}$/.test(p.data.date)&&new Date(p.data.date+'T00:00:00Z').getUTCDay()===1&&!p.data.note;
+ if(!OFFLINE_KINDS.includes(p.kind))return false;
  if(!s.createScopes[p.kind]?.some(x=>x.scopeType===p.scopeType&&x.scopeId===p.scopeId))return false;
- if(p.kind==='centerAttendance')return s.participants.some(x=>x.id===p.data?.participantId)&&!p.data?.note;
+ if(p.kind==='centerAttendance')return s.participants.some(x=>x.id===p.data?.participantId)&&validCenterAttendance(p.data.date,p.data.eventType)&&!p.data?.note;
  return true;
 }
 const open=()=>new Promise((resolve,reject)=>{const r=indexedDB.open('gaius-encrypted-offline-v1',1);r.onupgradeneeded=()=>r.result.createObjectStore('vault',{keyPath:'id'});r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
@@ -53,7 +56,8 @@ export async function refreshVault(state){
  const box=await seal(v.key,snapshot,'snapshot:'+v.owner);
  if(unlocked!==v)return;await put({...meta,box});if(unlocked===v)v.snapshot=snapshot;
 }
-export function offlineState(owner){const v=unlocked;if(!v||v.owner!==owner||!snapshotValid(v.snapshot,owner))return null;const s=v.snapshot;return {me:s.me,directory:[],offlineOnly:true,v11:{records:[],files:[],capabilities:{createScopes:s.createScopes,allowedKinds:Object.keys(s.createScopes),readableKinds:Object.keys(s.createScopes),attendanceParticipants:s.participants}}};}
+export function offlineState(owner){const v=unlocked;if(!v||v.owner!==owner||!snapshotValid(v.snapshot,owner))return null;const s=v.snapshot;return {me:s.me,directory:[],offlineOnly:true,v11:{records:[],files:[],capabilities:{createScopes:s.createScopes,allowedKinds:Object.keys(s.createScopes),readableKinds:Object.keys(s.createScopes),attendanceParticipants:s.participants,offlineMondayRoster:s.mondayRoster||[]}}};}
+export function mondayRoster(owner){const v=unlocked;return v?.owner===owner&&snapshotValid(v.snapshot,owner)?v.snapshot.mondayRoster||[]:[];}
 export async function queueDraft(owner,payload,requestId=crypto.randomUUID()){
  const v=unlocked;if(!v||v.owner!==owner||!draftAllowed(v.snapshot,payload))throw Error('Offline draft not permitted; reconnect or unlock offline storage');
  const id='draft:'+owner+':'+requestId;
