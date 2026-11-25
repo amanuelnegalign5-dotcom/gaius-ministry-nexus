@@ -1,3 +1,5 @@
+import {grantContext} from './gaius-grant-bridge.js';
+import {OFFLINE_POLICY_DEFAULTS,validOfflinePolicy,offlineLease} from './gaius-report-policy.js';
 // Shared domain rules for the v10 workspace, updated to v11.
 import {v11Command,v11State,approveFile} from './gaius-v11-core.js';
 import {isHQReporter,isNineHQDepartment,isDirectorRole,classifiedPermissions,legacyPermission,eligibleDelegate,isCenterAccount,CENTER_PERMISSION_KEYS} from './gaius-report-policy.js';
@@ -391,7 +393,9 @@ function visibleState(db,u){
     u.center?members.filter(x=>x.id===u.id||x.center===u.center||directors.includes(x.role)):
     u.department?members.filter(x=>x.id===u.id||(!x.center&&x.department===u.department)||directors.includes(x.role)):
     members.filter(x=>x.id===u.id||directors.includes(x.role));
-  return {me:privateUser(u),authorization:{legacyPages:legacyPages(u),offlineMondayRoster:managesAttendance(u)?members.filter(isMondayParticipant).map(({id,name})=>({id,name})):[]},directory:visiblePeople.map(directoryUser),former:full(u)?all.filter(x=>stateOf(x)==='removed').map(x=>({id:x.id,name:x.name})):[],
+  const offlinePolicy=db.one('system','offline-policy')||{values:OFFLINE_POLICY_DEFAULTS,_v:0};
+  const lease=offlineLease(u,offlinePolicy.values,grantContext(db,u).grants);
+  return {me:privateUser(u),authorization:{offlineLease:lease,...(full(u)?{offlinePolicy:{values:offlinePolicy.values,version:offlinePolicy._v||0}}:{}),legacyPages:legacyPages(u),offlineMondayRoster:managesAttendance(u)?members.filter(isMondayParticipant).map(({id,name})=>({id,name})):[]},directory:visiblePeople.map(directoryUser),former:full(u)?all.filter(x=>stateOf(x)==='removed').map(x=>({id:x.id,name:x.name})):[],
     users:admin?all.filter(x=>full(u)||canManage(u,x)).map(privateUser):[],reports,plans,
     reviews:reviews.filter(r=>r.kind==='plan'?planIds.has(r.itemId):reportIds.has(r.itemId)),
     comments:reportAccess?db.all('comments').filter(c=>reportIds.has(c.reportId)&&(c.visible===true||directors.includes(u.role))):[],
@@ -427,6 +431,11 @@ function command(db,u,a,d,verifier,hashes){
     put(db,'users',v);audit(db,u,a,u.id);return {};
   }
   need(!u.onboarding,'onboarding');
+  if(a==='offline.policy.save'){
+    need(full(u),'forbidden');required(validOfflinePolicy(d.values),'offlinePolicyInvalid');
+    const old=db.one('system','offline-policy')||{id:'offline-policy',_v:0};fresh(old,d.version);
+    const values=Object.fromEntries(Object.keys(OFFLINE_POLICY_DEFAULTS).map(k=>[k,d.values[k]]));put(db,'system',{...old,values});audit(db,u,a,'offline-policy');return {};
+  }
   if(a.startsWith('account.'))return manageAccount(db,u,a,d,verifier,hashes);
   if(a==='profile.save'){
     const target=d.id&&d.id!==u.id?exists(db.one('users',d.id)):u;need(target.id===u.id||full(u));fresh(target,d.version);
