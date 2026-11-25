@@ -1,0 +1,21 @@
+name: Role navigation browser acceptance
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [fix/center-role-navigation]
+permissions:
+  contents: read
+jobs:
+  chromium:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save --package-lock=false @playwright/test
+      - run: npx playwright install --with-deps chromium
+      - run: |
+          python3 -m http.server 4173 --bind 127.0.0.1 &
+          npx playwright test tests/browser/role-navigation.spec.js --workers=2 --reporter=list
