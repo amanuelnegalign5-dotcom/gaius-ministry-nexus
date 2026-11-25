@@ -12,6 +12,7 @@ const ver=r=>Number(r?._v||0);
 const homeScope=u=>['center_leader','potential_center_leader','center_department_leader','potential_department_leader','volunteer'].includes(u?.role)?'center': ['country_director','international_director'].includes(u?.role)?'personal':'hq';
 export const validScope=(s)=>['organization','hq','center','personal'].includes(s);
 function belongs(u,r){
+ if(r.kind==='centerAttendance'&&r.scopeType!=='center')return isDirectorRole(u);
  if(r.scopeType==='personal')return r.ownerId===u.id;
  if(r.scopeType==='center')return !!u.center&&String(u.center)===String(r.scopeId);
  if(r.scopeType==='hq')return !!u.department&&String(u.department)===String(r.scopeId);
@@ -27,6 +28,7 @@ const centerDepartmentMatches=(u,r)=>sameUnit(u.department,r.data?.departmentTyp
 const sharedStatus=r=>['approved','submitted'].includes(r.status);
 function canRead(u,r){
  if(!active(u))return false;
+ if(r.kind==='centerAttendance'&&r.scopeType!=='center')return isDirectorRole(u);
  if(r.scopeType==='personal')return r.ownerId===u.id;
  // HQ plans/reports are shared only among the nine assigned HQ leaders and
  // the real Directors. A custom fullAdmin flag is NOT a reporting role.
@@ -116,11 +118,11 @@ function save(db,u,p){
  if(old){
   check(canRead(u,old),'forbidden');check(old._v===Number(p.version),'conflict',409);
   check(['draft','revision_requested'].includes(old.status),'lockedRecord',409);
-  check(isDirector(u)||old.ownerId===u.id,'forbidden');
+  check((scopeType==='center'&&['monthly','plans6','centerAttendance'].includes(kind)?isDirectorRole(u):isDirector(u))||old.ownerId===u.id,'forbidden');
  }
  const data=validate(kind,p.data||{});
  // A center department cannot label or publish reports for a different department.
- if(!isDirector(u)&&scopeType==='center'&&u.role==='center_department_leader'&&kind==='monthly'){
+ if(!isDirectorRole(u)&&scopeType==='center'&&['center_department_leader','potential_department_leader'].includes(u.role)&&kind==='monthly'){
   check(!data.departmentType||sameUnit(data.departmentType,u.department),'departmentScopeMismatch');
   data.departmentType=u.department;
  }
