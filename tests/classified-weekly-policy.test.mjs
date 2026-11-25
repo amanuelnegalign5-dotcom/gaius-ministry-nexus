@@ -24,7 +24,7 @@ test('HQ and staff are the only eligible recipients; grants are classified by ro
 });
 test('center-only roles cannot inherit legacy administration or HQ file/report visibility',()=>{
  const {db}=setup();const u={...db.one('users','m'),fullAdmin:true,adminPermissions:['attendance','reports','manage_users','v11:approve']};
- assert.equal(full(u),false);assert.equal(permit(u,'manage_users'),false);assert.deepEqual(classifiedPermissions(u),[]);
+ assert.equal(full(u),false);assert.equal(permit(u,'manage_users'),false);assert.ok(classifiedPermissions(u).length>0);assert.ok(classifiedPermissions(u).every(p=>p.startsWith('center:')));
  db.put('v11_records',{id:'hq',kind:'monthly',scopeType:'hq',scopeId:'Media',ownerId:'h',status:'approved',data:{}});
  assert.ok(!v11State(db,u).v11.records.some(r=>r.id==='hq'));
  assert.equal(canReadFile(u,{scopeType:'hq',scopeId:'Media',ownerId:'h',status:'approved',allowedUserIds:['m']}),false);
@@ -45,4 +45,48 @@ test('Sunday plus one non-Monday weekly meeting; cross-store duplicate protectio
  assert.ok(v11State(db,db.one('users','m')).v11.records.some(r=>r.kind==='centerAttendance'));
  assert.equal(validCenterAttendance('2026-12-06','weekly'),false);
  assert.equal(validCenterAttendance('2026-12-08','weekly'),true);
+});
+
+test('director-assigned center permission permits own-center attendance only and is revocable',()=>{
+ const {db,call,east}=setup();
+ const u=db.one('users','m');
+ const payload={kind:'attendance',name:'Attendance',centerId:east,participantId:'s',date:'2026-11-29',program:'sunday',status:'present'};
+ assert.throws(()=>call('m','governance.save',payload),/forbidden/);
+ db.put('users',{...u,adminPermissions:['center:attendance']});
+ assert.ok(call('m','governance.save',payload).id);
+ assert.ok(v11State(db,db.one('users','m')).v11.capabilities.allowedKinds.includes('centerAttendance'));
+ const west=call('d','governance.save',{kind:'center',name:'West',region:'country',country:'ET'}).id;
+ assert.throws(()=>call('m','governance.save',{...payload,centerId:west}),/forbidden/);
+ db.put('users',u);
+ assert.throws(()=>call('m','governance.save',{...payload,date:'2026-12-06'}),/forbidden/);
+});
+test('center permissions for registry and mentorship do not allow cross-center access or delegation',()=>{
+ const {db,call,east}=setup();
+ const u=db.one('users','m');
+ const payload={kind:'child',centerId:east,name:'Synthetic youth',status:'active',mentorId:'m'};
+ assert.throws(()=>call('m','governance.save',payload),/forbidden/);
+ db.put('users',{...u,adminPermissions:['center:lijoch','center:mentorship']});
+ const child=call('m','governance.save',payload).id;
+ assert.ok(call('m','governance.save',{kind:'mentee',name:'Assignment',centerId:east,childId:child,mentorId:'m',status:'active'}).id);
+ assert.ok(!eligibleDelegate(db.one('users','m')));
+ const west=call('d','governance.save',{kind:'center',name:'West',region:'country',country:'ET'}).id;
+ assert.throws(()=>call('m','governance.save',{...payload,centerId:west}),/forbidden/);
+});
+test('center review permission requests changes only, never approves or reviews another center',()=>{
+ const {db}=setup();const u={...db.one('users','m'),adminPermissions:['center:review_reports']};db.put('users',u);
+ for(const [id,scopeId] of [['east','East'],['west','West']])db.put('v11_records',{id,kind:'monthly',scopeType:'center',scopeId,ownerId:'s',status:'submitted',data:{},history:[],_v:1});
+ assert.equal(v11State(db,u).v11.records.find(r=>r.id==='east').centerReview,true);
+ assert.throws(()=>v11Command(db,u,'v11.transition',{id:'east',version:1,decision:'approve'}),/forbidden/);
+ assert.throws(()=>v11Command(db,u,'v11.transition',{id:'west',version:1,decision:'revision_requested',note:'Revise'}),/forbidden/);
+ v11Command(db,u,'v11.transition',{id:'east',version:1,decision:'revision_requested',note:'Revise'});
+ assert.equal(db.one('v11_records','east').status,'revision_requested');
+});
+test('potential leaders receive limited own-center options and not management or delegation',()=>{
+ const {db}=setup();const p=db.one('users','p');
+ assert.deepEqual(classifiedPermissions(p),['center:submit_reports','center:submit_plans','center:upload_files']);
+ assert.ok(!v11State(db,p).v11.capabilities.allowedKinds.includes('monthly'));
+ const u={...p,adminPermissions:['center:submit_reports','center:upload_files']};
+ assert.ok(v11State(db,u).v11.capabilities.allowedKinds.includes('monthly'));
+ assert.equal(v11State(db,u).v11.capabilities.canUploadFile,true);
+ assert.equal(eligibleDelegate(u),false);
 });

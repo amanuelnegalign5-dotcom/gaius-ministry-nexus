@@ -36,10 +36,22 @@ export function roleClass(u){
 export const eligibleDelegate=u=>!!u?.id&&(u.accountStatus||'active')==='active'&&!u.onboarding&&['hq_leader','staff'].includes(roleClass(u));
 const hqLegacy=['reports','review_reports','review_plans','comments','attendance','announcements','projects','documents','manage_users','v11:oversight','v11:approve','v11:publish','v11:teaching','v11:edit_manual','v11:upload_file'];
 const staffLegacy=['attendance','announcements','projects','documents','v11:publish','v11:teaching','v11:upload_file'];
+export const CENTER_PERMISSION_KEYS=Object.freeze(['center:attendance','center:lijoch','center:mentorship','center:review_reports','center:review_plans','center:submit_reports','center:submit_plans','center:upload_files']);
 export function classifiedPermissions(u){
  const c=roleClass(u);
- return c==='hq_leader'?hqLegacy.slice():c==='staff'?staffLegacy.slice():[];
+ if(c==='hq_leader')return hqLegacy.slice();if(c==='staff')return staffLegacy.slice();
+ if(c!=='center'||!String(u.center||'').trim())return [];
+ if(u.role==='center_senior_leader')return ['center:review_reports','center:review_plans'];
+ if(['center_leader','center_department_leader'].includes(u.role))return CENTER_PERMISSION_KEYS.slice(0,5);
+ if(['potential_center_leader','potential_department_leader'].includes(u.role))return CENTER_PERMISSION_KEYS.slice(5);
+ return [];
 }
+export const centerPermission=(u,p)=>!!u&&(u.accountStatus||'active')==='active'&&!u.onboarding&&isCenterAccount(u)&&p.startsWith('center:')&&classifiedPermissions(u).includes(p)&&(u.adminPermissions||[]).includes(p);
+export const centerRosterManager=u=>!!u&&(u.accountStatus||'active')==='active'&&!u.onboarding&&!!String(u.center||'').trim()&&(u.role==='center_senior_leader'||centerPermission(u,'center:attendance'));
+export const centerLijochManager=u=>!!u&&(u.accountStatus||'active')==='active'&&!u.onboarding&&!!String(u.center||'').trim()&&(u.role==='center_senior_leader'||centerPermission(u,'center:lijoch'));
+export const centerMentorshipManager=u=>!!u&&(u.accountStatus||'active')==='active'&&!u.onboarding&&!!String(u.center||'').trim()&&(u.role==='center_senior_leader'||centerPermission(u,'center:mentorship'));
+export function centerCanReview(u,r){return !!r&&r.scopeType==='center'&&r.status==='submitted'&&r.ownerId!==u?.id&&!!u?.center&&String(u.center).trim().toLowerCase()===String(r.scopeId).trim().toLowerCase()&&(r.kind==='monthly'&&centerPermission(u,'center:review_reports')||r.kind==='plans6'&&centerPermission(u,'center:review_plans'));}
+
 export const legacyPermission=(u,p)=>classifiedPermissions(u).includes(p)&&(u.adminPermissions||[]).includes(p);
 const governanceModules=['center_registry','member_registry','community_projects','document_committee','mentorship','department_plan_tracking','director_visits','center_attendance','hq_plans','hq_reports','center_plans','center_reports','department_catalog','succession','advisory_board','documents','teaching','administration','media'];
 export function classifiedGrantOptions(u){

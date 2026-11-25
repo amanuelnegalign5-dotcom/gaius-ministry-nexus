@@ -41,7 +41,7 @@ function showOpenError(e){
  if(notice){notice.replaceChildren();notice.textContent=message;notice.classList.remove('hide');notice.classList.add('error');}
  else alert(message);
 }
-async function open(){
+async function open(requestedSection=null){
  if(active||opening)return;
  opening=true;
  const epoch=++viewEpoch;
@@ -55,7 +55,8 @@ async function open(){
  try{
   await load();
   if(epoch!==viewEpoch)return; // user signed out or closed while data loaded
-  if(directorRole(my().role)&&caps().director)section='director';
+  if(requestedSection==='delegation'&&caps().director&&store.shared)section='delegation';
+  else if(directorRole(my().role)&&caps().director)section='director';
   else if(section==='director')section='overview';
   active=true;
   app.classList.add('nexus-mode');
@@ -97,6 +98,7 @@ function maybeAutoOpen(identity={}){
  void open();
 }
 window.addEventListener('gaius:nexus-session-ready',event=>maybeAutoOpen(event.detail||{}));
+window.addEventListener('gaius:nexus-open-delegation',event=>{window.GAIUS_DELEGATION_RECIPIENT=event.detail?.recipientId||'';if(active&&caps().director){section='delegation';void render();}else void open('delegation');});
 // A fast local or cached session can finish before this module registers its listener.
 if(window.GAIUS_ACTIVE_IDENTITY)queueMicrotask(()=>maybeAutoOpen(window.GAIUS_ACTIVE_IDENTITY||{}));
 window.addEventListener('gaius:nexus-session-cleared',()=>{
@@ -107,10 +109,10 @@ app.addEventListener('click',e=>{if(active&&(e.target.closest('button.nav')||e.t
 window.addEventListener('online',()=>{if(active){alertMsg(text('ኢንተርኔት ተመልሷል፤ ያልተላኩ ረቂቆችን መላክ ይችላሉ','Online: pending drafts can now sync'));}});
 const my=()=>state?.me||{};const caps=()=>state?.v11?.capabilities||{};const records=()=>state?.v11?.records||[];
 const mine=()=>caps().defaultScopeType||(my().center?'center':my().department?'hq':'personal');
-const appStrings={director:['የዳይሬክተር ሥራ','Director workspace'],analytics:['የማዕከላት ትንታኔ','Center analytics'],overview:['ዋና እይታ','Overview'],records:['ሥራ መዝገቦች','Operations'],files:['የሰነድ ማከማቻ','File uploads'],offline:['ያልተላኩ ረቂቆች','Offline drafts'],governance:['የጋይዮስ አስተዳደር','Governance'],reference:['የድርጅት ስሞች','Official names']};
+const appStrings={director:['የዳይሬክተር ሥራ','Director workspace'],analytics:['የማዕከላት ትንታኔ','Center analytics'],overview:['ዋና እይታ','Overview'],records:['ሥራ መዝገቦች','Operations'],files:['የሰነድ ማከማቻ','File uploads'],offline:['ያልተላኩ ረቂቆች','Offline drafts'],governance:['የጋይዮስ አስተዳደር','Governance'],delegation:['ውክልናና ፈቃድ','Delegation & permissions'],reference:['የድርጅት ስሞች','Official names']};
 const tr=s=>appStrings[s]?(localLang()==='am'?appStrings[s][0]:appStrings[s][1]):s;
-function frame(content){root.innerHTML=`<div class="v11wrap"><div class="v11top"><div class="v11identity"><img class="v11logo" src="./icons/official-logo.jpg" alt="Gaius Ministry logo"><div><h1>Gaius Nexus <small>v11.2.5</small></h1><p>${text('የድርጅት አመራር፣ እቅድ፣ ሪፖርትና ክትትል','Ministry leadership, planning, reporting and follow-up')}</p></div></div><button type="button" class="btn ghost" data-v="close">${text('ወደ v10 ገጾች','Back to existing pages')}</button></div>
-  <div class="v11nav">${Object.keys(appStrings).filter(x=>x==='director'?caps().director:x==='analytics'?(caps().director||caps().oversight):x==='records'?myAvailableKinds().length>0:x==='files'?(caps().canUploadFile||(state?.v11?.files||[]).length>0):x==='governance'?store.shared&&!state.offlineOnly&&(caps().director||mine()==='center'||!!my().center||caps().hqReports||eligibleDelegate(my())):true).map(x=>`<button class="${section===x?'on':''}" type="button" data-v="section" data-section="${x}">${tr(x)}</button>`).join('')}</div><div id="v11notice" class="v11notice" hidden></div><div class="v11content">${content}</div></div>`;}
+function frame(content){root.innerHTML=`<div class="v11wrap"><div class="v11top"><div class="v11identity"><img class="v11logo" src="./icons/official-logo.jpg" alt="Gaius Ministry logo"><div><h1>Gaius Nexus <small>v11.2.6</small></h1><p>${text('የድርጅት አመራር፣ እቅድ፣ ሪፖርትና ክትትል','Ministry leadership, planning, reporting and follow-up')}</p></div></div><button type="button" class="btn ghost" data-v="close">${text('ወደ v10 ገጾች','Back to existing pages')}</button></div>
+  <div class="v11nav">${Object.keys(appStrings).filter(x=>x==='director'?caps().director:x==='delegation'?caps().director&&store.shared&&!state.offlineOnly:x==='analytics'?(caps().director||caps().oversight):x==='records'?myAvailableKinds().length>0:x==='files'?(caps().canUploadFile||(state?.v11?.files||[]).length>0):x==='governance'?store.shared&&!state.offlineOnly&&(caps().director||mine()==='center'||!!my().center||caps().hqReports||eligibleDelegate(my())):true).map(x=>`<button class="${section===x?'on':''}" type="button" data-v="section" data-section="${x}">${tr(x)}</button>`).join('')}</div><div id="v11notice" class="v11notice" hidden></div><div class="v11content">${content}</div></div>`;}
 function tile(title,value,desc=''){return `<div class="v11tile"><span>${escape(title)}</span><strong>${escape(value)}</strong><small>${escape(desc)}</small></div>`;}
 function dashboard(){const all=records().filter(r=>r.kind!=='centers'&&r.kind!=='centerUnits');const approved=all.filter(r=>r.status==='approved'),pending=all.filter(r=>r.status==='submitted');
  const centers=records().filter(r=>r.kind==='centers'),month=records().filter(r=>r.kind==='monthly'),pulses=records().filter(r=>r.kind==='followups');
@@ -176,12 +178,13 @@ function reportFields(rec){
 }
 function formHTML(rec){return `<div class="v11box"><h2>${rec?text('ረቂቅ ማስተካከያ','Edit draft'):text('አዲስ መዝገብ','New record')} — ${text(V11_KINDS[kind].am,V11_KINDS[kind].en)}</h2><p class="v11guide">${text('እቅዶችና ሪፖርቶች መጀመሪያ እንደ ረቂቅ ይቀመጣሉ፤ ለማጽደቅ በተለየ አዝራር ያስገቡ። ያለ ኢንተርኔት ረቂቆች በዚህ መሣሪያ ይቀመጣሉ።','Save drafts first, then submit them for approval. Offline drafts remain on this device until synced.')}</p><form id="v11form"><div class="v11fields">${scopeForm(rec)}${reportFields(rec)}</div><div class="v11actions"><button class="btn" type="submit">${text('ረቂቅ አስቀምጥ','Save draft')}</button><button class="btn ghost" type="button" data-v="cancel">${text('ሰርዝ','Cancel')}</button></div></form></div>`;}
 function card(r){const def=V11_KINDS[r.kind]||{},data=r.data||{};const title=data.title||data.name||data.activity||data.topic||data.member||(r.kind==='visits'?records().find(x=>x.id===data.centerRecordId)?.data?.name:'')||def.am||r.kind;
- const allowEdit=(r.status==='draft'||r.status==='revision_requested')&&(caps().director||r.ownerId===my().id);
+ const allowEdit=(r.status==='draft'||r.status==='revision_requested')&&(caps().director||r.ownerId===my().id||r.kind==='centerAttendance'&&(caps().allowedKinds||[]).includes('centerAttendance'));
  const canReview=(caps().director||caps().canApprove||r.delegatedApproval)&&r.status==='submitted'&&r.scopeType!=='personal';
  const fields=r.kind==='monthly'?[['Activity',data.activity],['Planned',data.planned],['Achieved',data.achieved],['Performance',safePerformance(data.planned,data.achieved)===null?'N/A':safePerformance(data.planned,data.achieved).toFixed(1)+'%'],['Focus',data.focus],['Key Result',data.result],['Challenge',data.challenge],['Next Action',data.next]]:Object.entries(data).filter(([,v])=>v!==''&&v!=null).slice(0,4);
  const actions=[];
  if(allowEdit)actions.push(`<button type="button" data-v="edit" data-id="${r.id}">${text('አርትዕ','Edit')}</button>`);
  if(!['visits','directorGoals'].includes(r.kind)&&(r.ownerId===my().id||caps().director)&&['draft','revision_requested'].includes(r.status))actions.push(`<button type="button" data-v="transition" data-id="${r.id}" data-decision="submit">${text('ለማጽደቅ ላክ','Submit')}</button>`);
+ if(r.centerReview&&!canReview)actions.push(`<button type="button" data-v="transition" data-id="${r.id}" data-decision="revision_requested">${text('ማሻሻያ ጠይቅ','Request changes')}</button>`);
  if(canReview){actions.push(`<button type="button" data-v="transition" data-id="${r.id}" data-decision="approve">${text('አጽድቅ','Approve')}</button>`,`<button type="button" data-v="transition" data-id="${r.id}" data-decision="revision_requested">${text('ማሻሻያ ጠይቅ','Request changes')}</button>`);}
  if(r.kind==='visits'&&r.ownerId===my().id&&['draft','revision_requested'].includes(r.status))actions.push(`<button type="button" data-v="completeVisit" data-id="${r.id}">${text('ጉብኝት ተጠናቋል','Mark visit completed')}</button>`);
  if(r.status==='approved'&&(caps().director||r.ownerId===my().id))actions.push(`<button type="button" data-v="transition" data-id="${r.id}" data-decision="revise">${text('አዲስ ቅጂ','New revision')}</button>`);
@@ -305,7 +308,8 @@ function analyticsScreen(){
 async function render(){if(!active)return;
  const appNow=localLang();launch.textContent='✦ '+(appNow==='am'?'ጋይዮስ ኔክሰስ':'Gaius Nexus');
  window.dispatchEvent(new Event('gaius:nexus-governance-close'));
- if(section==='governance'){frame('<div id="v11GovernanceMount"></div>');window.dispatchEvent(new Event('gaius:nexus-governance-open'));}else if(section==='director')directorScreen();else if(section==='analytics')analyticsScreen();else if(section==='overview')dashboard();else if(section==='records')recordsScreen();else if(section==='files')filesScreen();else if(section==='offline')await offlineScreen();else reference();
+ if(section==='delegation'&&!caps().director)section='overview';
+ if(section==='governance'||section==='delegation'){frame('<div id="v11GovernanceMount"></div>');window.dispatchEvent(new CustomEvent('gaius:nexus-governance-open',{detail:{tab:section==='delegation'?'grants':null}}));}else if(section==='director')directorScreen();else if(section==='analytics')analyticsScreen();else if(section==='overview')dashboard();else if(section==='records')recordsScreen();else if(section==='files')filesScreen();else if(section==='offline')await offlineScreen();else reference();
  if(state.offlineOnly)alertMsg(text('ያለ ኢንተርኔት የረቂቅ ሁኔታ ብቻ ነው። የኦንላይን መረጃ አልተጫነም።','Offline draft-only mode; no live organizational data is loaded.'));
  await loadMediaPreviews();}
 async function loadMediaPreviews(){for(const img of root.querySelectorAll('img[data-v11-media]')){const f=state.v11.files?.find(f=>f.id===img.dataset.v11Media);if(!f||!f.type.startsWith('image/'))continue;try{const blob=await store.downloadFile(f.id);const url=URL.createObjectURL(blob);img.src=url;img.hidden=false;img.onload=()=>setTimeout(()=>URL.revokeObjectURL(url),1000*60*2);}catch{}}}
