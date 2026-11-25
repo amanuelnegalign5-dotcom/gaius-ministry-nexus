@@ -80,7 +80,9 @@ test('Monday eligibility denies every center-only role even when fullAdmin is pr
 });
 test('deployment configuration, Pages package and cache include required private storage and shared policy',()=>{
  const config=JSON.parse(readFileSync(new URL('../wrangler.jsonc',import.meta.url),'utf8'));
- assert.deepEqual(config.r2_buckets,[{binding:'MEDIA_BUCKET',bucket_name:'gaius-nexus-private-media'}]);
+ assert.equal(config.r2_buckets,undefined,'Default deployment cannot require a paid-activation R2 binding');
+ const worker=readFileSync(new URL('../gaius-worker.js',import.meta.url),'utf8');
+ assert.match(worker,/privateMediaBucket\(new SqlPrivateMedia\(ctx.storage\),env.MEDIA_BUCKET\)/);
  assert.ok(config.durable_objects.bindings.some(b=>b.name==='WORKSPACE'));
  const pages=readFileSync(new URL('../.github/workflows/static.yml',import.meta.url),'utf8');
  const sw=readFileSync(new URL('../sw.js',import.meta.url),'utf8');
