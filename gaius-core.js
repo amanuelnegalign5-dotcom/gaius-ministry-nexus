@@ -1,6 +1,6 @@
 // Shared domain rules for the v10 workspace, updated to v11.
 import {v11Command,v11State,approveFile} from './gaius-v11-core.js';
-import {isHQReporter,isNineHQDepartment,isDirectorRole} from './gaius-report-policy.js';
+import {isHQReporter,isNineHQDepartment,isDirectorRole,classifiedPermissions,legacyPermission,eligibleDelegate,isCenterAccount} from './gaius-report-policy.js';
 export const roleDepartments = {
   media_leader:'Media', followup_leader:'Follow-up', service_leader:'Service Coordination',
   counseling_leader:'Counseling and Support', research_leader:'Research and Training', event_leader:'Event',
@@ -21,8 +21,8 @@ export const seedPeople = [
 ];
 const own = (o,k) => Object.prototype.hasOwnProperty.call(o,k);
 export const stateOf = u => u?.accountStatus || 'active'; // Existing v10 accounts were admitted at registration.
-export const full = u => !!u && stateOf(u)==='active' && (directors.includes(u.role) || u.fullAdmin===true);
-export const permit = (u,p) => !!u && stateOf(u)==='active' && (full(u) || (u.adminPermissions||[]).includes(p));
+export const full = u => !!u && stateOf(u)==='active' && directors.includes(u.role);
+export const permit = (u,p) => !!u && stateOf(u)==='active' && (full(u) || legacyPermission(u,p));
 export const seesReports = u => !!u && stateOf(u)==='active' &&
  (directors.includes(u.role)||isHQReporter(u));
 export const writesReports = u => seesReports(u);
@@ -48,7 +48,7 @@ function validateCenterAssignment(u){
  required(!['monday staff program','monday-staff','international','prayer','የሰኞ ሠራተኞች ፕሮግራም'].includes(normalizeUnit(u.department)),'departmentScopeMismatch');
 }
 export const managesAttendance = u => isMondayParticipant(u)&&(permit(u,'attendance') || ['admin_finance','monday_leader'].includes(u?.role));
-export const publishes = u => permit(u,'announcements') || ['admin_finance','monday_leader'].includes(u?.role);
+export const publishes = u => permit(u,'announcements') || (!isCenterAccount(u)&&['admin_finance','monday_leader'].includes(u?.role));
 export const now = () => new Date().toISOString();
 export const version = r => Number(r?._v||0);
 export class AppError extends Error {
@@ -246,10 +246,12 @@ function manageAccount(db,actor,action,data,secret,hashes){
       next.department=roleDepartments[next.role]||txt(data.department||u.department,160);
       next.center=txt(data.center??u.center,160);
       validateCenterAssignment(next);
-      next.adminPermissions=[...new Set(data.permissions)];next.fullAdmin=data.fullAdmin===true;
+      required(!data.fullAdmin||directors.includes(next.role),'roleInvalid');
+      required(directors.includes(next.role)?data.permissions.length===0:data.permissions.every(p=>classifiedPermissions(next).includes(p)),'permissionsInvalid');
+      next.adminPermissions=[...new Set(data.permissions)];next.fullAdmin=directors.includes(next.role);
       break;
     case 'account.grant':
-      need(directors.includes(actor.role)&&u.id!==actor.id&&status==='active');next.fullAdmin=true;
+      need(false,'useClassifiedDelegation',403);
       next.adminGrantedBy=actor.id;next.adminGrantedAt=now();break;
     case 'account.reset':
       need(status==='active'&&u.id!==actor.id);next.passwordHash=secret;next.onboarding=true;next.sessionVersion=(u.sessionVersion||0)+1;break;
