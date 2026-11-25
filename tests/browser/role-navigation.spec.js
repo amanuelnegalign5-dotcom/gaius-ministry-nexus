@@ -113,3 +113,105 @@ test('unassigned center account sees assignment warning rather than an unexplain
  await expect(nav.locator('[data-center-shortcut="centerAttendance"]')).toHaveCount(0);
  await expect(nav.locator('[data-center-shortcut="overview"]')).toBeVisible();
 });
+
+test('staff sees individually granted documents and announcements, and loses them after revocation',async({page})=>{
+ await enter(page,'staff','');
+ await expect(page.locator('[data-page="documents"]')).toBeHidden();
+ await expect(page.locator('[data-page="board"]')).toBeHidden();
+ await page.locator('[data-page="workspace"]').click();
+ await expect(page.locator('#workspace')).toBeVisible();
+ await expect(page.locator('#saveProject')).toBeHidden();
+ await page.evaluate(()=>{const u=JSON.parse(localStorage.users);u[0].adminPermissions=['documents','announcements','projects'];localStorage.users=JSON.stringify(u);});
+ await page.locator('#modeLine [data-action="refresh"]').click();
+ await expect(page.locator('[data-page="documents"]')).toBeVisible();
+ await expect(page.locator('[data-page="board"]')).toBeVisible();
+ await page.locator('[data-page="documents"]').click();
+ await expect(page.locator('#documents')).toBeVisible();
+ await page.locator('[data-page="board"]').click();
+ await expect(page.locator('#board')).toBeVisible();
+ await page.locator('[data-page="workspace"]').click();
+ await expect(page.locator('#saveProject')).toBeVisible();
+ await page.evaluate(()=>{const u=JSON.parse(localStorage.users);u[0].adminPermissions=[];localStorage.users=JSON.stringify(u);});
+ await page.locator('#modeLine [data-action="refresh"]').click();
+ await expect(page.locator('[data-page="documents"]')).toBeHidden();
+ await expect(page.locator('[data-page="board"]')).toBeHidden();
+ await expect(page.locator('#saveProject')).toBeHidden();
+});
+test('center permission refresh removes revoked editing controls without removing attendance reading',async({page})=>{
+ await enter(page,'center_leader','Gerji');
+ await page.evaluate(()=>{const u=JSON.parse(localStorage.users);u[0].adminPermissions=['center:attendance'];localStorage.users=JSON.stringify(u);});
+ await page.locator('#modeLine [data-action="refresh"]').click();
+ await page.locator('[data-center-shortcut="centerAttendance"]').click();
+ await expect(page.locator('#v11form')).toBeVisible();
+ await page.evaluate(()=>{const u=JSON.parse(localStorage.users);u[0].adminPermissions=[];localStorage.users=JSON.stringify(u);document.dispatchEvent(new Event('visibilitychange'));});
+ await expect(page.locator('#v11form')).toHaveCount(0);
+ await expect(page.locator('#v11Kind')).toHaveValue('centerAttendance');
+ await expect(page.locator('[data-section="delegation"]')).toHaveCount(0);
+});
+for(const role of ['country_director','international_director','hq_staff','staff','media_leader','center_leader','potential_department_leader','volunteer'])test(role+' opens every visible legacy page and Nexus section',async({page})=>{
+ await enter(page,role,['center_leader','potential_department_leader','volunteer'].includes(role)?'Gerji':'');
+ const pages=await page.locator('#app .nav:visible').evaluateAll(nodes=>nodes.map(n=>n.dataset.page));
+ for(const id of pages){await page.locator('[data-page="'+id+'"]').click();await expect(page.locator('#'+id)).toBeVisible();}
+ await page.locator('#v11launch').click();
+ await expect(page.locator('#gaiusV11 .v11nav')).toBeVisible();
+ const sections=await page.locator('#gaiusV11 [data-section]:visible').evaluateAll(nodes=>nodes.map(n=>n.dataset.section));
+ for(const section of sections){await page.locator('#gaiusV11 [data-section="'+section+'"]').click();await expect(page.locator('#gaiusV11 [data-section="'+section+'"]')).toHaveClass('on');await expect(page.locator('#gaiusV11 .v11content')).toBeVisible();}
+ if(['center_leader','potential_department_leader','volunteer'].includes(role))await expect(page.locator('#gaiusV11 [data-section="delegation"]')).toHaveCount(0);
+});
+
+test('shared governance recovers after suspension and retries failed authorization reads',async({page})=>{
+ await page.route('**/gaius-config.js',route=>route.fulfill({contentType:'application/javascript',body:"window.GAIUS_CONFIG={apiUrl:location.origin+'/mock-api'};"}));
+ const me={id:'fixture',name:'Shared test center leader',username:'fixture',role:'center_leader',center:'Gerji',department:'Worship Team',accountStatus:'active',adminPermissions:['center:attendance'],_v:1};
+ const snapshot={me,directory:[me],former:[],users:[],reports:[],plans:[],reviews:[],comments:[],attendance:[],projects:[],announcements:[],documents:[],audit:[],v11:{records:[],files:[],capabilities:{director:false,oversight:false,canApprove:false,allowedKinds:['plans6','monthly','centerAttendance'],readableKinds:['plans6','monthly','centerAttendance'],canUploadFile:true,defaultScopeType:'center',defaultScopeId:'Gerji',hqReports:false}},services:{mediaUploads:true,maxFileBytes:1048576}};
+ const governance={records:[{id:'g',kind:'center',name:'Gerji',region:'country',country:'ET',status:'active',version:1}],grants:[],capabilities:{director:false,centerRole:true,centerId:'g',hq:true,canManageAttendance:true,canManageChildren:false,canManageMentorship:false,canMentor:true},participants:[{id:'fixture',name:me.name,centerId:'g'}],mentors:[],eligibleHQ:[]};
+ let fail=false;
+ await page.route('**/mock-api/**',async route=>{
+ const path=new URL(route.request().url()).pathname;
+ if(path.endsWith('/info'))return route.fulfill({json:{bootstrap:false,emailRecovery:false}});
+ if(path.endsWith('/state'))return route.fulfill({json:snapshot});
+ if(path.endsWith('/command')&&route.request().postDataJSON().action==='governance.list')return fail?route.fulfill({status:503,json:{error:'serviceError'}}):route.fulfill({json:governance});
+ return route.fulfill({status:400,json:{error:'unknown'}});
+ });
+ await page.addInitScript(()=>{localStorage.gLang='en';sessionStorage.setItem('gaius.v10.session:'+location.origin+'/mock-api','synthetic-token');});
+ await page.goto('http://127.0.0.1:4173/index.html');
+ await expect(page.locator('#gaiusV11 .v11nav')).toBeVisible();
+ await page.locator('#gaiusV11 [data-section="governance"]').click();
+ await expect(page.locator('#governancePanel')).toContainText('Gerji');
+ await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});
+ await expect(page.locator('#governancePanel')).toContainText('Reconnect to verify permissions');
+ await expect(page.locator('#governancePanel')).not.toContainText('Gerji');
+ await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:false});document.dispatchEvent(new Event('visibilitychange'));});
+ await expect(page.locator('#governancePanel')).toContainText('Gerji');
+ fail=true;await page.locator('#governancePanel').getByRole('button',{name:'Refresh',exact:true}).click();
+ await expect(page.locator('#governancePanel').getByRole('button',{name:'Retry'})).toBeVisible();
+ fail=false;await page.locator('#governancePanel').getByRole('button',{name:'Retry'}).click();
+ await expect(page.locator('#governancePanel')).toContainText('Gerji');
+});
+
+test('rapid authorized navigation reuses one state request; explicit refresh still revalidates',async({page})=>{
+ await page.route('**/gaius-config.js',route=>route.fulfill({contentType:'application/javascript',body:"window.GAIUS_CONFIG={apiUrl:location.origin+'/mock-api'};"}));
+ const me={id:'fixture',name:'Synthetic staff',username:'fixture',role:'staff',accountStatus:'active',adminPermissions:['documents','announcements'],_v:1};
+ let requests=0;
+ const snapshot={me,authorization:{legacyPages:['profilePage','attendance','workspace','documents','board']},directory:[me],former:[],users:[],reports:[],plans:[],reviews:[],comments:[],attendance:[],projects:[],announcements:[],documents:[],audit:[],v11:{records:[],files:[],capabilities:{director:false,allowedKinds:['plans6','monthly'],readableKinds:['plans6','monthly'],canUploadFile:false,defaultScopeType:'personal',defaultScopeId:me.id,hqReports:false}},services:{mediaUploads:true,maxFileBytes:1048576}};
+ await page.route('**/mock-api/**',async route=>{const path=new URL(route.request().url()).pathname;
+ if(path.endsWith('/info'))return route.fulfill({json:{bootstrap:false,emailRecovery:false}});
+ if(path.endsWith('/state')){requests++;return route.fulfill({json:snapshot});}
+ return route.fulfill({status:400,json:{error:'unknown'}});
+ });
+ await page.addInitScript(()=>{localStorage.gLang='en';sessionStorage.setItem('gaius.v10.session:'+location.origin+'/mock-api','synthetic-token');});
+ await page.goto('http://127.0.0.1:4173/index.html');
+ await expect(page.locator('#who')).toContainText('Synthetic staff');
+ const initial=requests;
+ for(const id of ['documents','board','workspace','profilePage']){await page.locator('[data-page="'+id+'"]').click();await expect(page.locator('#'+id)).toBeVisible();}
+ expect(requests).toBe(initial);
+ await page.locator('#v11launch').click();
+ await expect(page.locator('#gaiusV11 .v11nav')).toBeVisible();
+ for(const section of ['records','overview','reference']){await page.locator('#gaiusV11 [data-section="'+section+'"]').click();await expect(page.locator('#gaiusV11 [data-section="'+section+'"]')).toHaveClass('on');}
+ expect(requests).toBe(initial);
+ await page.locator('#gaiusV11 [data-v="close"]').click();
+ snapshot.authorization.legacyPages=['profilePage','attendance','workspace'];me.adminPermissions=[];
+ await page.locator('#modeLine [data-action="refresh"]').click();
+ await expect(page.locator('[data-page="documents"]')).toBeHidden();
+ expect(requests).toBe(initial+1);
+ console.log('PERFORMANCE CHECK: seven page changes and Nexus entry used 0 additional state requests; explicit refresh used 1.');
+});

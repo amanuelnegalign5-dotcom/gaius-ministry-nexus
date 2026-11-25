@@ -1,6 +1,6 @@
 {
   "name": "gaius-nexus",
-  "version": "11.2.8",
+  "version": "11.3.0",
   "type": "module",
   "private": true,
   "scripts": {

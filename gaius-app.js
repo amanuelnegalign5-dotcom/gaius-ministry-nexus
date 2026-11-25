@@ -1,4 +1,4 @@
-import {classifiedPermissions,roleClass,isCenterAccount,eligibleDelegate} from './gaius-report-policy.js';
+import {classifiedPermissions,roleClass,isCenterAccount,eligibleGrantRecipient} from './gaius-report-policy.js';
 import * as store from './gaius-store.js';
 import { CENTER_UNITS } from './gaius-v11-model.js';
 import { roleDepartments, directors, permissions, seedPeople, stateOf, full, permit, seesReports, writesReports, managesAttendance, isMondayParticipant, publishes, canManage, flow, version } from './gaius-core.js';
@@ -261,8 +261,8 @@ function signedOut(){
  set('regCountry','Ethiopia');$('photoPreview').removeAttribute('src');vis('photoPreview',false);setMode('login');
 }
 async function info(){const result=await store.info();bootstrap=result.bootstrap;emailRecovery=result.emailRecovery===true;authText();}
-async function refresh(){
- const next=await store.state(); if(next.onboarding){if(!view?.onboarding){view=next;onboarding();}else view=next;return;}
+async function refresh(reuse=false){
+ const next=await store.state({reuse}); if(next.onboarding){if(!view?.onboarding){view=next;onboarding();}else view=next;return;}
  const first=!view||view.onboarding||view.me?.id!==next.me?.id||view.me?.role!==next.me?.role;view=next;syncMondayAccess();
  if(first){vis('auth',false);vis('app',true);forgetEdits();defaults();tab=seesReports(current())?'dashboard':isMondayParticipant(current())?'attendance':'profilePage';}
  renderAll();
@@ -414,23 +414,25 @@ function defaults(){
  assignment('addRole','addDept');
 }
 function allowPage(id){
- if(!current()||view.onboarding)return false;
- if(id==='attendance'&&!isMondayParticipant(current()))return false;
- if(id==='workspace'&&!isMondayParticipant(current()))return false;
- // Unassigned staff use Monday staff workspace, attendance, and own profile only.
- if(!full(current())&&!seesReports(current())&&!permit(current(),'manage_users'))
-   return ['workspace','attendance','profilePage'].includes(id);
- if(['dashboard','reports'].includes(id))return seesReports(current());
- if(id==='reportEntry')return writesReports(current());
- if(id==='documents')return permit(current(),'documents');
- if(id==='admin')return permit(current(),'manage_users');
- return true;
+ const u=current();if(!u||view.onboarding)return false;
+ if(Array.isArray(view.authorization?.legacyPages))return view.authorization.legacyPages.includes(id);
+ if(id==='profilePage')return true;
+ if(isCenterAccount(u))return false; // center operations use the dedicated scoped Nexus navigation.
+ if(id==='attendance'||id==='workspace')return isMondayParticipant(u);
+ if(id==='dashboard'||id==='reports'||id==='plans')return seesReports(u);
+ if(id==='reportEntry')return writesReports(u);
+ if(id==='documents')return permit(u,'documents');
+ if(id==='admin')return permit(u,'manage_users');
+ if(id==='board')return seesReports(u)||publishes(u);
+ if(id==='directory')return seesReports(u)||permit(u,'manage_users');
+ return false;
 }
 function navigate(id,scroll=true){
  tab=allowPage(id)?id:(isMondayParticipant(current())?'attendance':'profilePage');
  document.querySelectorAll('.page').forEach(p=>p.classList.toggle('on',p.id===tab));
  document.querySelectorAll('.nav').forEach(n=>{const on=n.dataset.page===tab;vis(n,allowPage(n.dataset.page));n.classList.toggle('on',on);n.classList.toggle('ghost',!on);if(on)n.setAttribute('aria-current','page');else n.removeAttribute('aria-current');});
  vis('auditPanel',tab==='admin'&&full(current()));
+ if(view&&!view.onboarding&&!$('app').classList.contains('nexus-mode'))renderActivePage();
  if(scroll)window.scrollTo({top:0,behavior:'auto'});
 }
 function revisionHistory(review){
@@ -656,13 +658,14 @@ async function saveCatalog(bucket){
 }
 for(const [bucket,c] of Object.entries(catalogs))on(c.save,()=>saveCatalog(bucket));
 document.querySelectorAll('.cancelRecord').forEach(b=>b.onclick=()=>clearCatalog(b.dataset.bucket));
-function renderCatalogs(){
+function renderCatalogs(which=tab){
  const u=current();
  vis(document.querySelector('#board .publisher'),publishes(u));
- $('annList').innerHTML=view.announcements.slice().reverse().map(r=>`<div class="item"><b>${h(r.title)}</b><div class="reporttext">${h(r.body)}</div>${attachmentLink(r.file)}<div class="muted">${h(r.author)} · ${h(dateTime(r.createdAt))}</div>${entityButtons('announcements',r,permit(u,'announcements'))}</div>`).join('')||empty();
- const owner=val('proOwner');selectOptions('proOwner',people().map(p=>[p.id,p.name]),owner||people()[0]?.id);
- $('projectList').innerHTML=view.projects.map(r=>`<div class="item"><b>${h(r.title)}</b><div class="reporttext">${h(r.body)}</div><div class="muted">${h(t('owner'))} · ${h(memberName(r.owner))} · ${h(r.due)}</div>${attachmentLink(r.file)}${button('project-plan','planForProject',{id:r.id})}${entityButtons('projects',r,permit(u,'projects'))}</div>`).join('')||empty();
- $('docList').innerHTML=permit(u,'documents')?(view.documents.map(r=>`<div class="item"><b>${h(r.title)}</b><div class="muted">${h(r.type)} · ${h(r.fileName)} · ${h(r.expiry||'—')}</div>${entityButtons('documents',r,true)}</div>`).join('')||empty()):'';
+ vis($('saveProject').closest('.card'),full(u)||permit(u,'projects'));
+ if(which==='board')$('annList').innerHTML=view.announcements.slice().reverse().map(r=>`<div class="item"><b>${h(r.title)}</b><div class="reporttext">${h(r.body)}</div>${attachmentLink(r.file)}<div class="muted">${h(r.author)} · ${h(dateTime(r.createdAt))}</div>${entityButtons('announcements',r,permit(u,'announcements'))}</div>`).join('')||empty();
+ if(which==='workspace'){const owner=val('proOwner');selectOptions('proOwner',people().map(p=>[p.id,p.name]),owner||people()[0]?.id);
+ $('projectList').innerHTML=view.projects.map(r=>`<div class="item"><b>${h(r.title)}</b><div class="reporttext">${h(r.body)}</div><div class="muted">${h(t('owner'))} · ${h(memberName(r.owner))} · ${h(r.due)}</div>${attachmentLink(r.file)}${button('project-plan','planForProject',{id:r.id})}${entityButtons('projects',r,permit(u,'projects'))}</div>`).join('')||empty();}
+ if(which==='documents')$('docList').innerHTML=permit(u,'documents')?(view.documents.map(r=>`<div class="item"><b>${h(r.title)}</b><div class="muted">${h(r.type)} · ${h(r.fileName)} · ${h(r.expiry||'—')}</div>${entityButtons('documents',r,true)}</div>`).join('')||empty()):'';
 }
 function summary(p){
  const att=view.attendance.filter(a=>a.personId===p.id),pr=view.projects.filter(r=>r.owner===p.id);
@@ -671,8 +674,8 @@ function summary(p){
  if(seesReports(current()))parts.push(`${t('reports')} ${view.reports.filter(r=>r.userId===p.id).length}`);
  return parts.filter(Boolean).join(' · ');
 }
-function renderPeople(){
- $('peopleList').innerHTML=people().map(p=>`<div class="card profile"><img class="avatar" src="${h(photo(p.photo))}" alt=""><div><b>${h(p.name)}</b><div class="muted">${h(summary(p))}</div></div></div>`).join('');
+function renderPeople(which=tab){
+ if(which==='directory')$('peopleList').innerHTML=people().map(p=>`<div class="card profile"><img class="avatar" src="${h(photo(p.photo))}" alt=""><div><b>${h(p.name)}</b><div class="muted">${h(summary(p))}</div></div></div>`).join('');
  const u=current();$('profileName').textContent=u.name;$('profileRole').textContent=role(u.role)+' · '+(dept(u.department)||'');$('profilePhoto').src=photo(u.photo);
  $('profileSummary').textContent=summary(u);
 }
@@ -728,7 +731,7 @@ function userAccessEditor(u){
  if(!full(current())||stateOf(u)!=='active')return '';
  return `<details class="accessEditor"><summary>${h(t('permissions'))}</summary><label>${h(t('role'))}<select data-role>${options(Object.keys(roleDepartments).map(k=>[k,role(k)]),u.role)}</select></label><label>${h(t('department'))}<select data-department>${options(Object.keys(departments).map(k=>[k,dept(k)]),u.department)}</select></label>
  <label>Center / ማዕከል<input data-center value="${h(u.center||'')}" placeholder="Center"></label>
- <input type="checkbox" data-full hidden ${directors.includes(u.role)?'checked':''}><p data-permission-class>${h(roleClass(u))}</p><div class="actions" data-role-permissions>${classifiedPermissions(u).map(p=>`<label class="perm pill"><input type="checkbox" data-permission="${p}" ${(u.adminPermissions||[]).includes(p)?'checked':''}>${h(t(p))}</label>`).join('')}</div><p class="muted">${isCenterAccount(u)?(lang==='am'?'መደበኛ የማዕከል ኃላፊነቶች በሚናው ይቀጥላሉ። እዚህ የሚመረጡት ተጨማሪ የራስ ማዕከል ፈቃዶች ናቸው።':'Base center responsibilities remain assigned by role. These are additional own-center permissions.'):(lang==='am'?'ፈቃድ ውክልና አይደለም።':'Permission is not delegation.')}</p><div class="actions">${button('access','save')}${eligibleDelegate(u)?`<button type="button" class="btn ghost" data-action="open-delegation">${lang==='am'?'ውክልና ስጥ':'Grant delegation'}</button>`:''}</div></details>`;
+ <input type="checkbox" data-full hidden ${directors.includes(u.role)?'checked':''}><p data-permission-class>${h(roleClass(u))}</p><div class="actions" data-role-permissions>${classifiedPermissions(u).map(p=>`<label class="perm pill"><input type="checkbox" data-permission="${p}" ${(u.adminPermissions||[]).includes(p)?'checked':''}>${h(t(p))}</label>`).join('')}</div><p class="muted">${isCenterAccount(u)?(lang==='am'?'መደበኛ የማዕከል ኃላፊነቶች በሚናው ይቀጥላሉ። እዚህ የሚመረጡት ተጨማሪ የራስ ማዕከል ፈቃዶች ናቸው።':'Base center responsibilities remain assigned by role. These are additional own-center permissions.'):(lang==='am'?'ፈቃድ ውክልና አይደለም።':'Permission is not delegation.')}</p><div class="actions">${button('access','save')}${eligibleGrantRecipient(u)?`<button type="button" class="btn ghost" data-action="open-delegation">${isCenterAccount(u)?(lang==='am'?'የማዕከል ፈቃድ ስጥ':'Grant center permission'):(lang==='am'?'ፈቃድ / ውክልና ስጥ':'Grant permission / delegation')}</button>`:''}</div></details>`;
 }
 document.addEventListener('change',e=>{if(!e.target.matches('.accessEditor [data-role], .accessEditor [data-center]'))return;const editor=e.target.closest('.accessEditor'),selected={role:editor.querySelector('[data-role]').value,center:editor.querySelector('[data-center]').value,accountStatus:'active'};editor.querySelector('[data-permission-class]').textContent=roleClass(selected);editor.querySelector('[data-role-permissions]').innerHTML=classifiedPermissions(selected).map(p=>`<label class="perm pill"><input type="checkbox" data-permission="${p}"> ${h(t(p))}</label>`).join('');});
 function renderAdmin(){
@@ -773,14 +776,27 @@ on('exportData',async()=>{
  a.href=url;a.download='GAIUS-private-records-'+day()+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);
 });
 $('userSearch').oninput=renderAdmin;$('userFilter').onchange=renderAdmin;
+function renderActivePage(){
+ switch(tab){
+ case 'dashboard':renderDashboard();break;
+ case 'reports':renderReports();break;
+ case 'plans':renderPlans();break;
+ case 'attendance':if(isMondayParticipant(current()))renderAttendance();break;
+ case 'board':case 'workspace':case 'documents':renderCatalogs(tab);break;
+ case 'directory':case 'profilePage':renderPeople(tab);break;
+ case 'admin':renderAdmin();break;
+ }
+}
+window.addEventListener('gaius:nexus-legacy-open',()=>{if(view&&!view.onboarding)navigate(tab,false);});
 function renderAll(){
  const u=current();syncMondayAccess();if(!u||view.onboarding)return;
- navigate(tab,false);
  $('who').textContent=u.name+' · '+role(u.role)+(u.center?' · '+u.center:'')+(full(u)?' · '+t('fullAdmin'):'');$('miniPhoto').src=photo(u.photo);
  selectOptions('reportStatus',reportOptions(),'submitted');
- renderDashboard();renderReports();renderPlans();if(isMondayParticipant(u))renderAttendance();else{for(const id of ['attendanceList','attendanceSummary','batchRows'])$(id).replaceChildren();}renderCatalogs();renderPeople();renderAdmin();navigate(tab,false);
+ const sections={dashboard:['recent','deptSummary','monthChart','performanceMonths'],reports:['reportList'],plans:['planList'],attendance:['attendanceList','attendanceSummary','batchRows'],workspace:['projectList'],board:['annList'],documents:['docList'],directory:['peopleList'],admin:['adminUsers','queue','auditList']};
+ for(const [page,ids] of Object.entries(sections))if(!allowPage(page))for(const id of ids)$(id).replaceChildren();
+ navigate(tab,false);
 }
-document.querySelectorAll('.nav').forEach(n=>n.onclick=()=>act(n,async()=>{await refresh();navigate(n.dataset.page);if(n.dataset.page==='profilePage'){editProfile=null;$('profileEditor').open=false;}}));
+document.querySelectorAll('.nav').forEach(n=>n.onclick=()=>act(n,async()=>{await refresh(true);navigate(n.dataset.page);if(n.dataset.page==='profilePage'){editProfile=null;$('profileEditor').open=false;}}));
 document.addEventListener('click',e=>{
  if(e.target.closest('[data-dismiss]')){vis('feedback',false);return;}
  const b=e.target.closest('[data-action]');if(!b)return;

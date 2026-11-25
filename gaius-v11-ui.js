@@ -1,4 +1,4 @@
-import {eligibleDelegate,isCenterAccount} from './gaius-report-policy.js';
+import {eligibleGrantRecipient,isCenterAccount} from './gaius-report-policy.js';
 import * as store from './gaius-store.js';
 import {V11_KINDS, V11_KINDS_LIST,HQ_UNITS,CENTER_UNITS,FOCUS,TEACHING_UNITS,NEXUS_DEPARTMENT_FIELDS} from './gaius-v11-model.js';
 import {visitCompliance,indicators,safePerformance,compatiblePlannedActual} from './gaius-nexus-analytics.js';
@@ -19,15 +19,15 @@ const launch=document.createElement('button');launch.type='button';launch.classN
 const centerNav=document.createElement('nav');centerNav.id='centerWorkspaceNav';centerNav.className='wrap centerWorkspaceNav';centerNav.hidden=true;app.querySelector('header').append(centerNav);
 function centerLinks(ctx){const c=ctx?.capabilities||{},read=c.readableKinds||c.allowedKinds||[],center=ctx?.me?.center;return [{section:'overview',am:'የማዕከል ሥራ',en:'Center workspace'},...center?[...read.includes('plans6')?[{section:'records',kind:'plans6',am:'ዕቅዶች',en:'Center plans'}]:[],...read.includes('monthly')?[{section:'records',kind:'monthly',am:'ሪፖርቶች',en:'Center reports'}]:[],...read.includes('centerAttendance')?[{section:'records',kind:'centerAttendance',am:'መገኘት',en:'Center attendance'}]:[],...ctx.shared?[{section:'governance',tab:'child',am:'የጋይዮስ ልጆች',en:'Gaius Lijoch'},{section:'governance',tab:'mentee',am:'መካሪነት',en:'Mentorship'},{section:'governance',tab:'progress',am:'ዕቅድ ክትትል',en:'Plan progress'}]:[],...c.canUploadFile?[{section:'files',am:'ሰነዶች',en:'Files'}]:[]]:[]];}
 function drawCenterNav(){const ctx=window.GAIUS_NAV_CONTEXT;centerNav.replaceChildren();centerNav.hidden=!isCenterAccount(ctx?.me);if(centerNav.hidden)return;launch.textContent='✦ '+text('የማዕከል ሥራ','Center workspace');for(const link of centerLinks(ctx)){const b=document.createElement('button');b.type='button';b.className='btn ghost';b.textContent=text(link.am,link.en);b.dataset.centerShortcut=link.kind||link.tab||link.section;b.onclick=()=>void openDestination(link);centerNav.append(b);}if(!ctx.me.center){const p=document.createElement('p');p.className='notice';p.textContent=text('የማዕከል ምደባ የለም። ዳይሬክተሩ ትክክለኛውን ማዕከል እንዲመድብ ይጠይቁ።','No center is assigned. Ask your director to assign your actual center before managing center records.');centerNav.append(p);}}
-async function openDestination(link){if(opening)return;editing=null;if(link.kind)kind=link.kind;requestedGovernanceTab=link.tab||null;if(active){section=link.section;try{await update();}catch(e){alertMsg(e.message,true);}}else await open(link.section);}
+async function openDestination(link){if(opening)return;editing=null;if(link.kind)kind=link.kind;requestedGovernanceTab=link.tab||null;if(active){section=link.section;try{await update(true);}catch(e){alertMsg(e.message,true);}}else await open(link.section);}
 let requestedGovernanceTab=null;
-window.addEventListener('gaius:nexus-state-refreshed',()=>{drawCenterNav();if(active&&!opening)void update().catch(e=>alertMsg(e.message,true));});
+window.addEventListener('gaius:nexus-state-refreshed',()=>{drawCenterNav();if(active&&!opening)void update(true).catch(e=>{close();root.replaceChildren();state=null;showOpenError(e);});});
 window.addEventListener('gaius:nexus-session-cleared',()=>{centerNav.hidden=true;centerNav.replaceChildren();});
 $('langApp')?.addEventListener('change',drawCenterNav);if(window.GAIUS_NAV_CONTEXT)drawCenterNav();
 function alertMsg(m,error=false){const x=$('v11notice');if(x){x.textContent=String(m||'');x.className='v11notice '+(error?'v11error':'');x.hidden=false;}}
-async function load(){
+async function load(reuse=false){
  try{
-  state=await store.state();
+  state=await store.state({reuse});
   if(state.onboarding)throw Error(text('መጀመሪያ መገለጫዎን ያጠናቅቁ','Complete your profile first'));
   // Only a minimal identity marker is cached; never cache organizational lists
   // or confidential backend records in offline session storage.
@@ -61,7 +61,7 @@ async function open(requestedSection=null){
  oldMain.style.display='none';
  root.innerHTML='<div class="v11wrap"><div class="v11box" role="status" aria-live="polite">Loading Gaius Nexus… / ጋይዮስ ኔክሰስ እየተከፈተ ነው…</div></div>';
  try{
-  await load();
+  await load(true);
   if(epoch!==viewEpoch)return; // user signed out or closed while data loaded
   if(requestedSection==='delegation'&&caps().director&&store.shared)section='delegation';
   else if(directorRole(my().role)&&caps().director)section='director';
@@ -91,6 +91,7 @@ function close(){
  root.hidden=true;
  app.classList.remove('nexus-mode');
  oldMain.style.display='';
+ window.dispatchEvent(new Event('gaius:nexus-legacy-open'));
 }
 // Tapping the launcher while the director workspace is already visible must NOT
 // make it disappear; the separate "Back to existing pages" control closes it.
@@ -121,8 +122,9 @@ const my=()=>state?.me||{};const caps=()=>state?.v11?.capabilities||{};const rec
 const mine=()=>caps().defaultScopeType||(my().center?'center':my().department?'hq':'personal');
 const appStrings={director:['የዳይሬክተር ሥራ','Director workspace'],analytics:['የማዕከላት ትንታኔ','Center analytics'],overview:['ዋና እይታ','Overview'],records:['ሥራ መዝገቦች','Operations'],files:['የሰነድ ማከማቻ','File uploads'],offline:['ያልተላኩ ረቂቆች','Offline drafts'],governance:['የጋይዮስ አስተዳደር','Governance'],delegation:['ውክልናና ፈቃድ','Delegation & permissions'],reference:['የድርጅት ስሞች','Official names']};
 const tr=s=>appStrings[s]?(localLang()==='am'?appStrings[s][0]:appStrings[s][1]):s;
-function frame(content){root.innerHTML=`<div class="v11wrap"><div class="v11top"><div class="v11identity"><img class="v11logo" src="./icons/official-logo.jpg" alt="Gaius Ministry logo"><div><h1>Gaius Nexus <small>v11.2.8</small></h1><p>${text('የድርጅት አመራር፣ እቅድ፣ ሪፖርትና ክትትል','Ministry leadership, planning, reporting and follow-up')}</p></div></div><button type="button" class="btn ghost" data-v="close">${text('ወደ v10 ገጾች','Back to existing pages')}</button></div>
-  <div class="v11nav">${Object.keys(appStrings).filter(x=>x==='director'?caps().director:x==='delegation'?caps().director&&store.shared&&!state.offlineOnly:x==='analytics'?(caps().director||caps().oversight):x==='records'?myAvailableKinds().length>0:x==='files'?(caps().canUploadFile||(state?.v11?.files||[]).length>0):x==='governance'?store.shared&&!state.offlineOnly&&(caps().director||mine()==='center'||!!my().center||caps().hqReports||eligibleDelegate(my())):true).map(x=>`<button class="${section===x?'on':''}" type="button" data-v="section" data-section="${x}">${tr(x)}</button>`).join('')}</div><div id="v11notice" class="v11notice" hidden></div><div class="v11content">${content}</div></div>`;}
+function availableSections(){return Object.keys(appStrings).filter(x=>x==='director'?caps().director:x==='delegation'?caps().director&&store.shared&&!state.offlineOnly:x==='analytics'?(caps().director||caps().oversight):x==='records'?myAvailableKinds().length>0:x==='files'?(caps().canUploadFile||(state?.v11?.files||[]).length>0):x==='governance'?store.shared&&!state.offlineOnly&&(caps().director||mine()==='center'||!!my().center||caps().hqReports||eligibleGrantRecipient(my())):true);}
+function frame(content){root.innerHTML=`<div class="v11wrap"><div class="v11top"><div class="v11identity"><img class="v11logo" src="./icons/official-logo.jpg" alt="Gaius Ministry logo"><div><h1>Gaius Nexus <small>v11.3.0</small></h1><p>${text('የድርጅት አመራር፣ እቅድ፣ ሪፖርትና ክትትል','Ministry leadership, planning, reporting and follow-up')}</p></div></div><button type="button" class="btn ghost" data-v="close">${text('ወደ v10 ገጾች','Back to existing pages')}</button></div>
+  <div class="v11nav">${availableSections().map(x=>`<button class="${section===x?'on':''}" type="button" data-v="section" data-section="${x}">${tr(x)}</button>`).join('')}</div><div id="v11notice" class="v11notice" hidden></div><div class="v11content">${content}</div></div>`;}
 function tile(title,value,desc=''){return `<div class="v11tile"><span>${escape(title)}</span><strong>${escape(value)}</strong><small>${escape(desc)}</small></div>`;}
 function dashboard(){const all=records().filter(r=>r.kind!=='centers'&&r.kind!=='centerUnits');const approved=all.filter(r=>r.status==='approved'),pending=all.filter(r=>r.status==='submitted');
  const centers=records().filter(r=>r.kind==='centers'),month=records().filter(r=>r.kind==='monthly'),pulses=records().filter(r=>r.kind==='followups');
@@ -136,7 +138,7 @@ function dashboard(){const all=records().filter(r=>r.kind!=='centers'&&r.kind!==
 }
 function myAvailableKinds(){return (caps().readableKinds||caps().allowedKinds||[]).filter(k=>V11_KINDS[k]);}
 const opts=(values,selected)=>values.map(([v,l])=>`<option value="${escape(v)}" ${String(v)===String(selected)?'selected':''}>${escape(l)}</option>`).join('');
-function userOptions(cur){return opts([['','—'],...(state.directory||[]).map(u=>[u.id,u.name+' · '+(u.department||u.center||u.role)])],cur);}
+function userOptions(cur){const list=kind==='centerAttendance'&&caps().attendanceParticipants?caps().attendanceParticipants:state.directory||[];return opts([['','—'],...list.map(u=>[u.id,u.name+' · '+(u.department||u.center||u.role)])],cur);}
 function centerOptions(cur){const names=records().filter(r=>r.kind==='centers').map(r=>r.data.name);if(my().center&&!names.includes(my().center))names.push(my().center);return opts([['','—'],...names.map(s=>[s,s])],cur);}
 function field(f,value=''){const [key,am,en,type,required]=f,label=escape(localLang()==='am'?am:en)+(required?' *':'');let control;
  const select=items=>`<select data-field="${key}" ${required?'required':''}>${opts(items,value)}</select>`;
@@ -165,6 +167,13 @@ function field(f,value=''){const [key,am,en,type,required]=f,label=escape(localL
  return `<label class="v11field"><span>${label}</span>${control}</label>`;
 }
 function scopeForm(rec){const director=caps().director;
+ if(!director&&caps().createScopes){
+  const scopes=rec?[{scopeType:rec.scopeType,scopeId:rec.scopeId}]:caps().createScopes[kind]||[];
+  if(!scopes.length)return '';
+  const label=x=>x.scopeType==='personal'?text('የግል','Personal'):x.scopeType==='organization'?text('ድርጅት','Organization'):x.scopeType.toUpperCase()+' · '+(x.label||x.scopeId);
+  const first=scopes[0];
+  return (scopes.length>1?'<label class="v11field"><span>'+text('የተፈቀደ ወሰን','Authorized scope')+'</span><select id="v11AuthorizedScope">'+opts(scopes.map((x,i)=>[String(i),label(x)]),'0')+'</select></label>':'<p class="v11muted">'+escape(label(first))+'</p>')+'<input type="hidden" id="v11Scope" value="'+escape(first.scopeType)+'"><input type="hidden" id="v11ScopeId" value="'+escape(first.scopeId)+'">';
+ }
  const choices=director?[['organization',text('ለድርጅት','Organization')],['hq','HQ'],['center',text('ማዕከል','Center')],['personal',text('የግል','Personal')]]:mine()==='center'?[['center',text('የራሴ ማዕከል','My center')]]:mine()==='hq'?[['hq',text('የራሴ ክፍል','My HQ department')]]:[['personal',text('የራሴ ዕቅድና ሪፖርት','My private plans and reports')]];
  let sc=rec?.scopeType||(V11_KINDS[kind].personalOnly?'personal':choices[0][0]);if(V11_KINDS[kind].centerOnly)sc='center';
  const id=rec?.scopeId||(sc==='personal'?my().id:sc==='hq'?my().department:sc==='center'?my().center:'org');
@@ -188,24 +197,24 @@ function reportFields(rec){
 }
 function formHTML(rec){return `<div class="v11box"><h2>${rec?text('ረቂቅ ማስተካከያ','Edit draft'):text('አዲስ መዝገብ','New record')} — ${text(V11_KINDS[kind].am,V11_KINDS[kind].en)}</h2><p class="v11guide">${text('እቅዶችና ሪፖርቶች መጀመሪያ እንደ ረቂቅ ይቀመጣሉ፤ ለማጽደቅ በተለየ አዝራር ያስገቡ። ያለ ኢንተርኔት ረቂቆች በዚህ መሣሪያ ይቀመጣሉ።','Save drafts first, then submit them for approval. Offline drafts remain on this device until synced.')}</p><form id="v11form"><div class="v11fields">${scopeForm(rec)}${reportFields(rec)}</div><div class="v11actions"><button class="btn" type="submit">${text('ረቂቅ አስቀምጥ','Save draft')}</button><button class="btn ghost" type="button" data-v="cancel">${text('ሰርዝ','Cancel')}</button></div></form></div>`;}
 function card(r){const def=V11_KINDS[r.kind]||{},data=r.data||{};const title=data.title||data.name||data.activity||data.topic||data.member||(r.kind==='visits'?records().find(x=>x.id===data.centerRecordId)?.data?.name:'')||def.am||r.kind;
- const allowEdit=(r.status==='draft'||r.status==='revision_requested')&&(caps().director||r.ownerId===my().id||r.kind==='centerAttendance'&&(caps().allowedKinds||[]).includes('centerAttendance'));
- const canReview=(caps().director||caps().canApprove||r.delegatedApproval)&&r.status==='submitted'&&r.scopeType!=='personal';
+ const allowEdit=r.actions?.edit===true;
+ const canReview=r.actions?.approve===true;
  const fields=r.kind==='monthly'?[['Activity',data.activity],['Planned',data.planned],['Achieved',data.achieved],['Performance',safePerformance(data.planned,data.achieved)===null?'N/A':safePerformance(data.planned,data.achieved).toFixed(1)+'%'],['Focus',data.focus],['Key Result',data.result],['Challenge',data.challenge],['Next Action',data.next]]:Object.entries(data).filter(([,v])=>v!==''&&v!=null).slice(0,4);
  const actions=[];
  if(allowEdit)actions.push(`<button type="button" data-v="edit" data-id="${r.id}">${text('አርትዕ','Edit')}</button>`);
- if(!['visits','directorGoals'].includes(r.kind)&&(r.ownerId===my().id||caps().director)&&['draft','revision_requested'].includes(r.status))actions.push(`<button type="button" data-v="transition" data-id="${r.id}" data-decision="submit">${text('ለማጽደቅ ላክ','Submit')}</button>`);
- if(r.centerReview&&!canReview)actions.push(`<button type="button" data-v="transition" data-id="${r.id}" data-decision="revision_requested">${text('ማሻሻያ ጠይቅ','Request changes')}</button>`);
+ if(r.actions?.submit)actions.push(`<button type="button" data-v="transition" data-id="${r.id}" data-decision="submit">${text('ለማጽደቅ ላክ','Submit')}</button>`);
+ if(r.actions?.requestChanges&&!canReview)actions.push(`<button type="button" data-v="transition" data-id="${r.id}" data-decision="revision_requested">${text('ማሻሻያ ጠይቅ','Request changes')}</button>`);
  if(canReview){actions.push(`<button type="button" data-v="transition" data-id="${r.id}" data-decision="approve">${text('አጽድቅ','Approve')}</button>`,`<button type="button" data-v="transition" data-id="${r.id}" data-decision="revision_requested">${text('ማሻሻያ ጠይቅ','Request changes')}</button>`);}
  if(r.kind==='visits'&&r.ownerId===my().id&&['draft','revision_requested'].includes(r.status))actions.push(`<button type="button" data-v="completeVisit" data-id="${r.id}">${text('ጉብኝት ተጠናቋል','Mark visit completed')}</button>`);
- if(r.status==='approved'&&(caps().director||r.ownerId===my().id))actions.push(`<button type="button" data-v="transition" data-id="${r.id}" data-decision="revise">${text('አዲስ ቅጂ','New revision')}</button>`);
- if(caps().director)actions.push(`<button type="button" data-v="transition" data-id="${r.id}" data-decision="archive">${text('ማህደር','Archive')}</button>`);
+ if(r.actions?.revise)actions.push(`<button type="button" data-v="transition" data-id="${r.id}" data-decision="revise">${text('አዲስ ቅጂ','New revision')}</button>`);
+ if(r.actions?.archive)actions.push(`<button type="button" data-v="transition" data-id="${r.id}" data-decision="archive">${text('ማህደር','Archive')}</button>`);
  if(['monthly','plans6','followups','manuals','directorGoals','visits'].includes(r.kind))actions.push(`<button type="button" data-v="export" data-id="${r.id}" data-as="docx">Word</button>`,`<button type="button" data-v="export" data-id="${r.id}" data-as="pdf">PDF</button>`);
  return `<article class="v11record" data-id="${escape(r.id)}"><div class="v11recordhead"><h3>${escape(title)}</h3><span class="v11status">${statusText(r.status)}</span></div><p class="v11muted">${escape(text(def.am,def.en))} · ${scopeLabel(r.scopeType)} ${escape(r.scopeId||'')} · ${escape(r.ownerName||'')} · ${escape((r.updatedAt||'').slice(0,10))}</p>${(data.fileId||data.photoFileId)?`<div class="v11gallery"><img data-v11-media="${escape(data.fileId||data.photoFileId)}" alt="Approved report evidence / member photo" hidden><small>${text('የተፈቀደ ማስረጃ ፎቶ','Approved evidence photo')}</small></div>`:''}<div class="v11summary">${fields.map(([k,v])=>`<p><b>${escape(k)}:</b> ${escape(String(v??'—').slice(0,500))}</p>`).join('')}</div><details><summary>${text('ሙሉ መረጃ / የታሪክ ማስታወሻ','Full details / review history')}</summary>${Object.entries(data).map(([k,v])=>`<p class="${k==='body'?'v11fulltext':''}"><b>${escape(k)}:</b> ${escape(v)}</p>`).join('')}${r.kind==='manuals'&&r.sourceSnapshot?.body?`<details class="v11original"><summary>${text('ያልተቀየረ የምንጭ ጽሑፍ','Original imported text (read-only)')}</summary><p class="v11fulltext">${escape(r.sourceSnapshot.body)}</p></details>`:''}<p>${r.history?.map(e=>escape(e.action+' · '+e.byName+' · '+e.at.slice(0,16)+' '+(e.note||''))).join(' | ')||''}</p></details><div class="v11actions">${actions.join('')}</div></article>`;
 }
-function recordsScreen(){const list=myAvailableKinds(),def=V11_KINDS[kind];if(!list.includes(kind))kind=list[0]||'plans6';
+function recordsScreen(){const list=myAvailableKinds();if(!list.includes(kind)){kind=list[0]||'plans6';editing=null;}
  if(!list.length){frame(`<div class="v11box"><p>${text('ለዚህ ሚና የሥራ መዝገብ ማስገባት አልተፈቀደም።','No record-editing modules are assigned to this role.')}</p></div>`);return;}
  const chosen=records().filter(r=>r.kind===kind&&r.status!=='archived').sort((a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||'')));
- frame(`<div class="v11box"><label class="v11field"><span>${text('የሥራ ክፍል ምረጥ','Choose module')}</span><select id="v11Kind">${opts(list.map(x=>[x,text(V11_KINDS[x].am,V11_KINDS[x].en)]),kind)}</select></label><p class="v11guide">${kind==='manuals'?text('የጋይዮስ መመሪያንና የትምህርት ሂደትን በሙሉ ጽሑፍ በዚህ ገጽ ይያዙ። የግል ሰነዶችን በይፋ ወደ GitHub አትጫኑ።','Import the complete manual and teaching roadmap securely here. Do not publish confidential source documents in GitHub.'):text('በአማርኛና English የሚሠራ የተዋቀረ መዝገብ።','Structured bilingual records.')}</p></div>${(caps().allowedKinds||[]).includes(kind)?formHTML(editing):''}<div class="v11box"><h2>${text('የተፈቀዱ መዝገቦች','Visible records')} (${chosen.length})</h2>${chosen.map(card).join('')||'<p class="v11muted">'+text('ገና መዝገብ የለም','No records yet')+'</p>'}</div>${kind==='monthly'&&caps().director?legacyReports():''}`);
+ frame(`<div class="v11box"><label class="v11field"><span>${text('የሥራ ክፍል ምረጥ','Choose module')}</span><select id="v11Kind">${opts(list.map(x=>[x,text(V11_KINDS[x].am,V11_KINDS[x].en)]),kind)}</select></label><p class="v11guide">${kind==='manuals'?text('የጋይዮስ መመሪያንና የትምህርት ሂደትን በሙሉ ጽሑፍ በዚህ ገጽ ይያዙ። የግል ሰነዶችን በይፋ ወደ GitHub አትጫኑ።','Import the complete manual and teaching roadmap securely here. Do not publish confidential source documents in GitHub.'):text('በአማርኛና English የሚሠራ የተዋቀረ መዝገብ።','Structured bilingual records.')}</p></div>${editing?.actions?.edit||(caps().allowedKinds||[]).includes(kind)?formHTML(editing):''}<div class="v11box"><h2>${text('የተፈቀዱ መዝገቦች','Visible records')} (${chosen.length})</h2>${chosen.map(card).join('')||'<p class="v11muted">'+text('ገና መዝገብ የለም','No records yet')+'</p>'}</div>${kind==='monthly'&&caps().director?legacyReports():''}`);
 }
 function legacyReports(){const items=window.GAIUS_V10?.originals||[];return `<div class="v11box"><h2>${text('የv10 የጥቅምት ስድስት ኦሪጅናል ሪፖርቶች','Six preserved v10 October source reports')}</h2><p class="v11guide">${text('ይህ የታሪካዊ ጽሑፍ ነው፤ አዲስ ሪፖርት አይደለም።','Historical originals, not newly submitted reports.')}</p>${items.map((r,i)=>`<article class="v11record"><h3>${escape(localLang()==='am'?r.amTitle:r.enTitle)}</h3><details><summary>${text('ይዘት አሳይ','Show content')}</summary><pre class="v11body">${escape(localLang()==='am'?r.am:r.en)}</pre></details><button type="button" data-v="legacy-export" data-legacy="${i}" data-as="docx">Word</button> <button type="button" data-v="legacy-export" data-legacy="${i}" data-as="pdf">PDF</button></article>`).join('')}</div>`;}
 // Accessible native file inputs remain directly tappable on iPhone and desktop.
@@ -226,10 +235,11 @@ function filesScreen(){
  const canPreview=f=>f.type==='application/pdf'||['image/png','image/jpeg','image/webp','text/plain','text/csv'].includes(f.type);
  const cards=files.map(f=>`<article class="v11record v11filecard"><div class="v11recordhead"><h3>📁 ${escape(f.name)}</h3><span class="v11status">${escape(statusText(f.status))}</span></div><p class="v11muted">${fmt(f)} · ${(f.size/1024).toFixed(0)} KB · ${escape(scopeLabel(f.scopeType))} / ${escape(f.scopeId)}</p>
  <div class="v11actions"><button type="button" data-v="download" data-id="${escape(f.id)}">${text('አውርድ','Download')}</button>${canPreview(f)?`<button type="button" data-v="previewFile" data-id="${escape(f.id)}">${text('ተመልከት','Preview')}</button>`:''}
- ${admin?`<button type="button" data-v="fileReview" data-id="${escape(f.id)}" data-decision="approved">${text('አጽድቅ','Approve')}</button><button type="button" data-v="fileReview" data-id="${escape(f.id)}" data-decision="rejected">${text('ውድቅ','Reject')}</button>`:''}</div>
+ ${f.actions?.review?`<button type="button" data-v="fileReview" data-id="${escape(f.id)}" data-decision="approved">${text('አጽድቅ','Approve')}</button><button type="button" data-v="fileReview" data-id="${escape(f.id)}" data-decision="rejected">${text('ውድቅ','Reject')}</button>`:''}</div>
  ${admin?`<details><summary>${text('የሰነዱን መዳረሻ አስተዳድር','Manage file access')}</summary><form class="v11FileGrants" data-file-id="${escape(f.id)}"><p class="v11guide">${text('በአስተዳዳሪ የተመረጡ ሰዎች ሰነዱ ከጸደቀ በኋላ ብቻ ይደርሳቸዋል።','Selected people can open the file only after approval. This does not grant HQ report access.')}</p><div class="v11grants">${users.map(u=>`<label><input type="checkbox" name="allowedUser" value="${escape(u.id)}" ${(f.allowedUserIds||[]).includes(u.id)?'checked':''}> ${escape(u.name)} · ${escape(u.role)}</label>`).join('')||'<p>No other active users</p>'}</div><button class="btn" type="submit">${text('መዳረሻ አስቀምጥ','Save access permissions')}</button></form></details>`:''}
  </article>`).join('')||'<p>—</p>';
- const choices=admin?`<label class="v11field"><span>${text('የፋይሉ ወሰን','Access scope')}</span><select id="v11FileScope"><option value="personal">${text('የግል','Personal')}</option><option value="organization">${text('ድርጅት','Organization')}</option><option value="hq">HQ</option><option value="center">${text('ማዕከል','Center')}</option></select></label><label class="v11field"><span>${text('የክፍሉ/ማዕከሉ ትክክለኛ ስም','Exact HQ department or center name')}</span><input id="v11FileUnit" value="${escape(scopeId)}" placeholder="e.g. Media or Gerji"></label>`:
+ const targets=caps().uploadScopes||[];
+ const choices=!admin&&targets.length?`<label class="v11field"><span>${text('የተፈቀደ ወሰን','Authorized scope')}</span><select id="v11UploadTarget">${opts(targets.map((x,i)=>[String(i),scopeLabel(x.scopeType)+' · '+(x.label||x.scopeId)]),'0')}</select></label>`:admin?`<label class="v11field"><span>${text('የፋይሉ ወሰን','Access scope')}</span><select id="v11FileScope"><option value="personal">${text('የግል','Personal')}</option><option value="organization">${text('ድርጅት','Organization')}</option><option value="hq">HQ</option><option value="center">${text('ማዕከል','Center')}</option></select></label><label class="v11field"><span>${text('የክፍሉ/ማዕከሉ ትክክለኛ ስም','Exact HQ department or center name')}</span><input id="v11FileUnit" value="${escape(scopeId)}" placeholder="e.g. Media or Gerji"></label>`:
  `<input type="hidden" id="v11FileScope" value="${escape(scope)}"><input type="hidden" id="v11FileUnit" value="${escape(scopeId)}">`;
  frame(`<div class="v11box"><h2>${text('የተጠበቀ የሰነዶች ማከማቻ','Secure document library')}</h2><p class="v11guide">${text('PDF፣ Word፣ PowerPoint፣ Excel፣ ምስሎች፣ CSV፣ TXT እና MP4 ይደገፋሉ። የግል ሰነዶች ወደ Public GitHub አይሄዱም።','Supports PDF, Word, PowerPoint, Excel, images, CSV, TXT and MP4. Private documents never go into the public GitHub site.')}</p>
  ${!ready?`<p role="status" class="v11notice v11error">${text('የተጠበቀ ማከማቻ አልተገናኘም። አስተዳዳሪውን አነጋግር።','Private media storage is not available. Contact the administrator.')}</p>`:''}
@@ -318,16 +328,27 @@ function analyticsScreen(){
 async function render(){if(!active)return;
  const appNow=localLang();launch.textContent='✦ '+(isCenterAccount(my())?text('የማዕከል ሥራ','Center workspace'):(appNow==='am'?'ጋይዮስ ኔክሰስ':'Gaius Nexus'));
  window.dispatchEvent(new Event('gaius:nexus-governance-close'));
- if(section==='delegation'&&!caps().director)section='overview';
+ if(!availableSections().includes(section)){section=availableSections().includes('overview')?'overview':availableSections()[0];editing=null;}
+ if(editing){const fresh=records().find(r=>r.id===editing.id);if(!fresh||!fresh.actions?.edit||fresh._v!==editing._v)editing=null;}
  if(section==='governance'||section==='delegation'){frame('<div id="v11GovernanceMount"></div>');window.dispatchEvent(new CustomEvent('gaius:nexus-governance-open',{detail:{tab:section==='delegation'?'grants':requestedGovernanceTab}}));}else if(section==='director')directorScreen();else if(section==='analytics')analyticsScreen();else if(section==='overview')dashboard();else if(section==='records')recordsScreen();else if(section==='files')filesScreen();else if(section==='offline')await offlineScreen();else reference();
  requestedGovernanceTab=null;
  if(state.offlineOnly)alertMsg(text('ያለ ኢንተርኔት የረቂቅ ሁኔታ ብቻ ነው። የኦንላይን መረጃ አልተጫነም።','Offline draft-only mode; no live organizational data is loaded.'));
- await loadMediaPreviews();}
-async function loadMediaPreviews(){for(const img of root.querySelectorAll('img[data-v11-media]')){const f=state.v11.files?.find(f=>f.id===img.dataset.v11Media);if(!f||!f.type.startsWith('image/'))continue;try{const blob=await store.downloadFile(f.id);const url=URL.createObjectURL(blob);img.src=url;img.hidden=false;img.onload=()=>setTimeout(()=>URL.revokeObjectURL(url),1000*60*2);}catch{}}}
-async function update(){await load();await render();}
+ void loadMediaPreviews();}
+async function loadMediaPreviews(){
+ const images=Array.from(root.querySelectorAll('img[data-v11-media]'));
+ // Limit concurrent private downloads; don't block the page or retain old blob URLs.
+ const epoch=viewEpoch;
+ async function next(){while(images.length&&active&&epoch===viewEpoch){const img=images.shift();if(!img.isConnected)continue;
+ const f=state?.v11?.files?.find(f=>f.id===img.dataset.v11Media);if(!f||!f.type.startsWith('image/'))continue;
+ try{const blob=await store.downloadFile(f.id);if(!img.isConnected||epoch!==viewEpoch||!active)continue;
+ const url=URL.createObjectURL(blob);img.onload=img.onerror=()=>URL.revokeObjectURL(url);img.src=url;img.hidden=false;setTimeout(()=>URL.revokeObjectURL(url),120000);}catch{}}}
+ await Promise.all([next(),next(),next()]);
+}
+async function update(reuse=false){const epoch=viewEpoch;await load(reuse);if(epoch!==viewEpoch||!active)return;await render();}
 async function withBusy(fn){if(queueBusy)return;queueBusy=true;try{await fn();}catch(e){alertMsg(e.message,true);}finally{queueBusy=false;}}
 function serializedForm(){const form=$('v11form');if(!form.reportValidity())return null;
- const payload={kind,scopeType:$('v11Scope').value,scopeId:$('v11ScopeId').value.trim(),data:{}};
+ const selected=$('v11AuthorizedScope');const target=selected&&!editing?caps().createScopes?.[kind]?.[Number(selected.value)]:null;
+ const payload={kind,scopeType:target?.scopeType||$('v11Scope').value,scopeId:target?.scopeId||$('v11ScopeId').value.trim(),data:{}};
  for(const el of form.querySelectorAll('[data-field]'))payload.data[el.dataset.field]=el.value;
  if(editing){payload.id=editing.id;payload.version=editing._v;}
  return payload;
@@ -393,7 +414,7 @@ root.addEventListener('submit',e=>{e.preventDefault();withBusy(async()=>{
  }
  if(e.target.id==='v11Upload'){
   if(state.services?.mediaUploads!==true)throw Error(text('Cloudflare R2 ማከማቻ አልተዋቀረም','Private media storage is unavailable'));
-  const file=$('v11File')?.files?.[0];if(!file)throw Error(text('መጀመሪያ ፋይል ምረጥ','Choose a file first'));if(file.size>(state.services.maxFileBytes||10485760))throw Error(text('የፋይሉ መጠን ከገደቡ በላይ ነው','File exceeds the storage size limit'));const result=await store.uploadFile(file,$('v11FileScope').value,$('v11FileUnit').value);
+  const file=$('v11File')?.files?.[0];if(!file)throw Error(text('መጀመሪያ ፋይል ምረጥ','Choose a file first'));if(file.size>(state.services.maxFileBytes||10485760))throw Error(text('የፋይሉ መጠን ከገደቡ በላይ ነው','File exceeds the storage size limit'));const selected=$('v11UploadTarget');const target=selected?caps().uploadScopes?.[Number(selected.value)]:null;const result=await store.uploadFile(file,target?.scopeType||$('v11FileScope').value,target?.scopeId||$('v11FileUnit').value);
   await update();alertMsg(text('ፋይሉ ማጽደቅ ይጠብቃል','Upload pending approval')+' #'+result.id);
  }
 });});
@@ -418,9 +439,9 @@ root.addEventListener('click',e=>{const b=e.target.closest('[data-v]');if(!b)ret
  if(op==='showCenter'){selectedCenter=b.dataset.center;section='analytics';render();return;}
  if(op==='openKind'){kind=b.dataset.kind;editing=null;section='records';await render();return;}
  if(op==='completeVisit'){const item=records().find(r=>r.id===id);if(!item)throw Error('missing');if(!item.data.actualDate||!item.data.observations)throw Error(text('መጀመሪያ የተጎበኘበትን ቀንና የታዩትን ነገሮች በEdit ሙላ','Edit visit to enter actual date and observations first'));await store.command('v11.completeVisit',{id,version:item._v,actualDate:item.data.actualDate,observations:item.data.observations});await update();return;}
- if(op==='section'){section=b.dataset.section;editing=null;await update();return;}
+ if(op==='section'){if(!availableSections().includes(b.dataset.section))return;section=b.dataset.section;editing=null;await update(true);return;}
  if(op==='cancel'){editing=null;render();return;}
- if(op==='edit'){const obj=records().find(r=>r.id===id);if(!obj)throw Error('missing');kind=obj.kind;editing=obj;section='records';render();root.querySelector('#v11form')?.scrollIntoView({block:'start'});return;}
+ if(op==='edit'){const obj=records().find(r=>r.id===id);if(!obj)throw Error('missing');if(!obj.actions?.edit)throw Error('forbidden');kind=obj.kind;editing=obj;section='records';render();root.querySelector('#v11form')?.scrollIntoView({block:'start'});return;}
  if(op==='transition'){await transition(id,b.dataset.decision);return;}
  if(op==='export'){exportRecord(id,b.dataset.as);return;}
  if(op==='legacy-export'){exportLegacy(Number(b.dataset.legacy),b.dataset.as);return;}

@@ -54,3 +54,12 @@ test('director can save and revoke center permissions but cannot grant Monday or
  await call(db,'d','account.access',{...p,version:2,permissions:[]});
  assert.deepEqual(db.one('users','c').adminPermissions,[]);
 });
+
+test('staff project permission enables own project creation but never edits another user project',async()=>{
+ const db=new DB();for(const id of ['one','two'])db.put('users',{id,name:id,role:'staff',accountStatus:'active',adminPermissions:['projects']});
+ const payload={bucket:'projects',title:'Project',body:'Objective',owner:'one',due:'2026-12-01'};
+ const result=await call(db,'one','record.save',payload);
+ await assert.rejects(call(db,'two','record.save',{...payload,id:result.id,version:1}),/forbidden/);
+ await call(db,'one','record.save',{...payload,id:result.id,version:1,title:'Updated'});
+ assert.equal(db.one('projects',result.id).title,'Updated');
+});

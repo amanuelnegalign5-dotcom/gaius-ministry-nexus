@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {governanceService,GOVERNANCE_CATALOG} from '../gaius-governance-service.js';
 import {v11Command,v11State,canReadFile} from '../gaius-v11-core.js';
 import {full,permit} from '../gaius-core.js';
-import {classifiedPermissions,eligibleDelegate,validCenterAttendance} from '../gaius-report-policy.js';
+import {classifiedPermissions,eligibleDelegate,eligibleGrantRecipient,validCenterAttendance} from '../gaius-report-policy.js';
 function setup(){
  const map=new Map();const db={all:k=>map.get(k)||[],one(k,id){return this.all(k).find(r=>r.id===id)},put(k,r){map.set(k,[...this.all(k).filter(x=>x.id!==r.id),r])}};
  for(const [id,role,center] of [['d','country_director',''],['h','followup_leader',''],['f','hq_staff',''],['s','center_senior_leader','East'],['m','center_leader','East'],['p','potential_center_leader','East']])db.put('users',{id,name:id,role,center,accountStatus:'active',department:id==='h'?'Follow-up':'Worship Team'});
@@ -13,7 +13,8 @@ function setup(){
 }
 test('every non-Director member can receive a grant, classified by role',()=>{
  const {db,call,east}=setup();const p={type:'delegation',scope:'organization',modules:['center_reports'],actions:['view'],startsAt:'2026-11-25T00:00:00Z',endsAt:'2026-11-26T00:00:00Z',purpose:'Review',reference:'D1'};
- for(const id of ['h','f','s','m','p'])assert.equal(eligibleDelegate(db.one('users',id)),true,id);
+ for(const id of ['h','f','s','m','p'])assert.equal(eligibleGrantRecipient(db.one('users',id)),true,id);
+ for(const id of ['s','m','p'])assert.equal(eligibleDelegate(db.one('users',id)),false,id);
  assert.equal(eligibleDelegate(db.one('users','d')),false,'Directors grant; they are not recipients');
  assert.throws(()=>call('d','governance.grant',{...p,recipientId:'d'}),/recipientInvalid/);
  // HQ leaders and staff: unchanged organization-wide classification.
@@ -21,9 +22,10 @@ test('every non-Director member can receive a grant, classified by role',()=>{
  assert.throws(()=>call('d','governance.grant',{...p,recipientId:'f',actions:['approve']}),/permissionsInvalid/);
  assert.ok(call('d','governance.grant',{...p,recipientId:'h',actions:['view','approve']}).id);
  // Center members: own center only, center modules only.
- const own={...p,scope:east};
+ const own={...p,type:'permission',scope:east};
+ assert.throws(()=>call('d','governance.grant',{...p,scope:east,recipientId:'m'}),/grantTypeInvalid/);
  for(const id of ['s','m','p'])assert.ok(call('d','governance.grant',{...own,recipientId:id}).id,id);
- for(const id of ['s','m','p'])assert.throws(()=>call('d','governance.grant',{...p,recipientId:id}),/scopeInvalid/,'organization scope refused for '+id);
+ for(const id of ['s','m','p'])assert.throws(()=>call('d','governance.grant',{...own,scope:'organization',recipientId:id}),/scopeInvalid/,'organization scope refused for '+id);
  const west=call('d','governance.save',{kind:'center',name:'West',region:'country',country:'ET'}).id;
  assert.throws(()=>call('d','governance.grant',{...own,scope:west,recipientId:'m'}),/scopeInvalid/,'another center refused');
  for(const module of ['hq_reports','hq_plans','director_visits','succession','advisory_board'])
@@ -42,7 +44,7 @@ test('a center member\'s grant stops working outside their own center',()=>{
  const child=call('d','governance.save',{kind:'child',centerId:east,name:'Synthetic youth',status:'active'}).id;
  const sees=id=>call(id,'governance.list',{}).records.some(r=>r.id===child);
  assert.equal(sees('m'),false,'a center leader has no registry access by role alone');
- call('d','governance.grant',{recipientId:'m',type:'delegation',scope:east,modules:['member_registry'],actions:['view'],startsAt:'2026-11-25T00:00:00Z',endsAt:'2026-11-26T00:00:00Z',purpose:'Cover',reference:'D2'});
+ call('d','governance.grant',{recipientId:'m',type:'permission',scope:east,modules:['member_registry'],actions:['view'],startsAt:'2026-11-25T00:00:00Z',endsAt:'2026-11-26T00:00:00Z',purpose:'Cover',reference:'D2'});
  assert.equal(sees('m'),true,'the delegation opens it');
  db.put('users',{...db.one('users','m'),center:'West'});
  assert.equal(sees('m'),false,'moving to another center ends it');
@@ -93,7 +95,7 @@ test('center permissions for registry and mentorship do not allow cross-center a
  db.put('users',{...u,adminPermissions:['center:lijoch','center:mentorship']});
  const child=call('m','governance.save',payload).id;
  assert.ok(call('m','governance.save',{kind:'mentee',name:'Assignment',centerId:east,childId:child,mentorId:'m',status:'active'}).id);
- assert.ok(eligibleDelegate(db.one('users','m')),'center leaders can now be delegates, within their own center');
+ assert.ok(eligibleGrantRecipient(db.one('users','m')));assert.equal(eligibleDelegate(db.one('users','m')),false);
  const west=call('d','governance.save',{kind:'center',name:'West',region:'country',country:'ET'}).id;
  assert.throws(()=>call('m','governance.save',{...payload,centerId:west}),/forbidden/);
 });
@@ -113,5 +115,5 @@ test('potential leaders receive limited own-center options and no management',()
  const u={...p,adminPermissions:['center:submit_reports','center:upload_files']};
  assert.ok(v11State(db,u).v11.capabilities.allowedKinds.includes('monthly'));
  assert.equal(v11State(db,u).v11.capabilities.canUploadFile,true);
- assert.equal(eligibleDelegate(u),true);
+ assert.equal(eligibleDelegate(u),false);
 });

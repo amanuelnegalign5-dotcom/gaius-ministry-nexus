@@ -49,6 +49,20 @@ function validateCenterAssignment(u){
 }
 export const managesAttendance = u => isMondayParticipant(u)&&(permit(u,'attendance') || ['admin_finance','monday_leader'].includes(u?.role));
 export const publishes = u => permit(u,'announcements') || (!isCenterAccount(u)&&['admin_finance','monday_leader'].includes(u?.role));
+// Legacy page availability is produced by the same predicates used by mutations.
+export function legacyPages(u){
+ if(!u||u.onboarding||stateOf(u)!=='active')return [];
+ const pages=['profilePage'];
+ if(isCenterAccount(u))return pages;
+ if(isMondayParticipant(u))pages.push('attendance','workspace');
+ if(seesReports(u))pages.push('dashboard','reports','plans');
+ if(writesReports(u))pages.push('reportEntry');
+ if(permit(u,'documents'))pages.push('documents');
+ if(permit(u,'manage_users'))pages.push('admin');
+ if(seesReports(u)||publishes(u))pages.push('board');
+ if(seesReports(u)||permit(u,'manage_users'))pages.push('directory');
+ return pages;
+}
 export const now = () => new Date().toISOString();
 export const version = r => Number(r?._v||0);
 export class AppError extends Error {
@@ -341,9 +355,9 @@ function editRecord(db,u,bucket,d){
     values={personId,date,status,note,programType,recordedBy:u.id,personName:db.one('users',personId)?.name||seedPeople.find(p=>p.id===personId)?.name||old?.personName};
   }else{
     if(bucket==='announcements')need(publishes(u));
-    if(bucket==='projects')need(full(u)||(isHQReporter(u)&&permit(u,'projects')),'forbidden');
+    if(bucket==='projects')need(full(u)||permit(u,'projects'),'forbidden');
     if(bucket==='documents')need(permit(u,'documents'));
-    if(old)need(full(u)||permit(u,bucket));
+    if(old){need(full(u)||permit(u,bucket));if(['projects','documents'].includes(bucket))need(full(u)||old.createdBy===u.id||bucket==='documents'&&old.ownerId===u.id);}
     const title=txt(d.title,500);required(title,'titleRequired');
     if(bucket==='documents'){
       values={title,...strings(d,['type','expiry','fileName'],500),ownerId:old?.ownerId||u.id};
@@ -368,16 +382,16 @@ function removeRecord(db,u,d){
 function visibleState(db,u){
   if(u.onboarding)return {me:privateUser(u),onboarding:true};
   const all=db.all('users'),members=all.filter(x=>stateOf(x)==='active'),admin=permit(u,'manage_users');
-  const reviews=db.all('reviews'),reportAccess=seesReports(u),reports=reportAccess?db.all('reports').filter(r=>
+  const reviews=db.all('reviews'),reviewById=new Map(reviews.map(r=>[r.id,r])),reportAccess=seesReports(u),reports=reportAccess?db.all('reports').filter(r=>
     canSeeLegacyItem(u,r,'report')&&(flow(r)!=='draft'||r.userId===u.id||directors.includes(u.role))):[];
   const plans=db.all('plans').filter(r=>canSeeLegacyItem(u,r,'plan') &&
-    (r.userId===u.id || directors.includes(u.role) || ['submitted','under_review','approved','locked'].includes(flow(r,reviews.find(v=>v.id==='plan:'+r.id)))));
+    (r.userId===u.id || directors.includes(u.role) || ['submitted','under_review','approved','locked'].includes(flow(r,reviewById.get('plan:'+r.id)))));
   const reportIds=new Set([...(seesReports(u)?sourceIds:[]),...reports.map(r=>r.id)]),planIds=new Set(plans.map(r=>r.id));
   const visiblePeople=full(u)?members:
     u.center?members.filter(x=>x.id===u.id||x.center===u.center||directors.includes(x.role)):
     u.department?members.filter(x=>x.id===u.id||(!x.center&&x.department===u.department)||directors.includes(x.role)):
     members.filter(x=>x.id===u.id||directors.includes(x.role));
-  return {me:privateUser(u),directory:visiblePeople.map(directoryUser),former:full(u)?all.filter(x=>stateOf(x)==='removed').map(x=>({id:x.id,name:x.name})):[],
+  return {me:privateUser(u),authorization:{legacyPages:legacyPages(u)},directory:visiblePeople.map(directoryUser),former:full(u)?all.filter(x=>stateOf(x)==='removed').map(x=>({id:x.id,name:x.name})):[],
     users:admin?all.filter(x=>full(u)||canManage(u,x)).map(privateUser):[],reports,plans,
     reviews:reviews.filter(r=>r.kind==='plan'?planIds.has(r.itemId):reportIds.has(r.itemId)),
     comments:reportAccess?db.all('comments').filter(c=>reportIds.has(c.reportId)&&(c.visible===true||directors.includes(u.role))):[],

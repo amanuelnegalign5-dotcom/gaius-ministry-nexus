@@ -1,7 +1,7 @@
 
 const scope=new URL(self.registration.scope);
 const prefix='gaius-review:'+scope.pathname+':';
-const cacheName=prefix+'11.2.8-integrated-governance';
+const cacheName=prefix+'11.3.0-integrated-governance';
 const files=['./','./index.html','./gaius-appearance-help.js','./gaius-config.js','./gaius-app.js','./gaius-store.js','./gaius-core.js','./gaius-report-policy.js','./gaius-v11-ui.js','./gaius-governance-ui.js','./gaius-department-charters.js','./gaius-v11-model.js','./gaius-nexus-analytics.js','./gaius-v11-core.js','./gaius-grant-bridge.js','./gaius-v11-export.js','./gaius-v11.css','./gaius-brand.css','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png','./icons/maskable-192.png','./icons/maskable-512.png','./icons/apple-touch-icon.png','./icons/official-logo.jpg','./icons/gaius-white-logo.webp','./icons/favicon-32.png'];
 const assets=new Set(files.map(p=>new URL(p,scope).href));
 self.addEventListener('install',event=>{

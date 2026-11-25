@@ -144,7 +144,7 @@ export class MinistryWorkspace {
     const {user}=await authenticatedUser(this.db,token);
     const scopeType=request.headers.get('X-Gaius-Scope')||'organization';
     const scopeId=request.headers.get('X-Gaius-Unit')||'org';
-    if(!canUploadFile(user,scopeType,scopeId))throw new AppError('forbidden',403);
+    if(!canUploadFile(user,scopeType,scopeId,this.db))throw new AppError('forbidden',403);
     const type=(request.headers.get('Content-Type')||'').split(';')[0].toLowerCase();
     const allowed=new Map([
       ['application/pdf',['pdf']],['application/vnd.openxmlformats-officedocument.wordprocessingml.document',['docx']],
@@ -192,7 +192,7 @@ export class MinistryWorkspace {
     let data;try{data=await request.json();}catch{throw new AppError('unknown',400);}
     const file=this.db.one('v11_files',String(data.id||''));
     if(!file)throw new AppError('missing',404);
-    if(!canReadFile(user,file))throw new AppError('forbidden',403);
+    if(!canReadFile(user,file,this.db))throw new AppError('forbidden',403);
     const result=await this.media.get(file.key);
     if(!result)throw new AppError('missing',404);
     return new Response(result.body,{headers:{'Content-Type':file.type,'Content-Disposition':"attachment; filename*=UTF-8''"+encodeURIComponent(file.name),
