@@ -415,6 +415,7 @@ function defaults(){
 }
 function allowPage(id){
  const u=current();if(!u||view.onboarding)return false;
+ if(Array.isArray(view.authorization?.legacyPages))return view.authorization.legacyPages.includes(id);
  if(id==='profilePage')return true;
  if(isCenterAccount(u))return false; // center operations use the dedicated scoped Nexus navigation.
  if(id==='attendance'||id==='workspace')return isMondayParticipant(u);
