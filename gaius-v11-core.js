@@ -2,7 +2,7 @@ import {V11_KINDS,V11_KINDS_LIST} from './gaius-v11-model.js';
 import {isHQReporter,isDirectorRole,isNineHQDepartment} from './gaius-report-policy.js';
 // Authoritative v11 permission logic. Every API write/read runs these checks in the Worker.
 const clean=(x,n=9000)=>String(x??'').trim().slice(0,n);
-const isDirector=u=>['country_director','international_director'].includes(u?.role)||u?.fullAdmin===true;
+const isDirector=u=>['country_director','international_director'].includes(u?.role);
 const granted=(u,p)=>isDirector(u)||(u?.adminPermissions||[]).includes(p);
 const active=u=>u&&u.accountStatus!=='removed'&&u.accountStatus!=='pending';
 const fail=(code,status=403)=>{const e=new Error(code);e.status=status;throw e;};
@@ -23,6 +23,7 @@ const unit=x=>String(x??'').trim().toLowerCase();
 const sameUnit=(a,b)=>!!unit(a)&&unit(a)===unit(b);
 const hqLeader=u=>isHQReporter(u);
 const centerMember=u=>CENTER_ROLES.has(u?.role)&&!!u.center;
+const centerReader=u=>!!u?.center&&(centerMember(u)||['potential_center_leader','potential_department_leader'].includes(u.role));
 const centerDepartmentMatches=(u,r)=>sameUnit(u.department,r.data?.departmentType||r.data?.department||r.data?.unit);
 const sharedStatus=r=>['approved','submitted'].includes(r.status);
 function canRead(u,r){
@@ -45,7 +46,8 @@ function canRead(u,r){
  if(r.kind==='manuals')return granted(u,'v11:edit_manual')&&belongs(u,r);
  if(r.kind==='succession'&&r.ownerId!==u.id&&r.data?.leaderId!==u.id)return false;
  if(r.scopeType==='center'){
-  if(!centerMember(u)||!sameUnit(u.center,r.scopeId))return false;
+  if(!centerReader(u)||!sameUnit(u.center,r.scopeId))return false;
+  if(!centerMember(u))return ['monthly','plans6'].includes(r.kind)&&sharedStatus(r);
   if(r.ownerId===u.id)return true;
   if(['monthly','plans6'].includes(r.kind)||['center_senior_leader','center_leader'].includes(u.role))return sharedStatus(r);
   return centerDepartmentMatches(u,r)&&sharedStatus(r);
@@ -58,7 +60,7 @@ function canRead(u,r){
 }
 function canCreate(u,k,scopeType,scopeId){
  if(!active(u)||!V11_KINDS[k])return false;
- if(V11_KINDS[k].personalOnly)return isDirector(u)&&scopeType==='personal'&&scopeId===u.id&&u.role==='country_director';
+ if(V11_KINDS[k].personalOnly)return isDirector(u)&&scopeType==='personal'&&scopeId===u.id;
  if(scopeType==='personal'){
   if(isDirector(u))return scopeId===u.id&&!V11_KINDS[k].centerOnly;
   // Private personal reporting workspace for staff and center-related workers
@@ -114,10 +116,10 @@ function save(db,u,p){
   data.departmentType=u.department;
  }
  if(kind==='visits'){
-   check(u.role==='country_director'&&scopeType==='personal'&&scopeId===u.id,'forbidden');
+   check(isDirector(u)&&scopeType==='personal'&&scopeId===u.id,'forbidden');
    const center=db.one('v11_records',data.centerRecordId);check(center&&center.kind==='centers'&&center.status!=='archived','centerNotFound',400);
  }
- if(kind==='directorGoals')check(u.role==='country_director'&&scopeType==='personal'&&scopeId===u.id,'forbidden');
+ if(kind==='directorGoals')check(isDirector(u)&&scopeType==='personal'&&scopeId===u.id,'forbidden');
  if(kind==='succession'){
   check(data.leaderId===u.id||isDirector(u),'forbidden');
   if(scopeType==='personal')check(data.leaderId===u.id,'personalOwnerOnly');
@@ -228,7 +230,7 @@ function importSourceDocs(db,u,p){
  return {count:created.length,created,skipped};
 }
 function completeVisit(db,u,p){
- check(active(u)&&u.role==='country_director','forbidden');
+ check(active(u)&&isDirector(u),'forbidden');
  const r=db.one('v11_records',clean(p.id));
  check(r&&r.kind==='visits'&&r.ownerId===u.id,'missing',404);
  check(r._v===Number(p.version),'conflict',409);
@@ -263,7 +265,7 @@ export function v11Command(db,u,action,p){
 export function v11State(db,u){
  const scopeType=isDirector(u)?'organization':centerMember(u)?'center':hqLeader(u)?'hq':'personal';
  const scopeId=scopeType==='center'?u.center:scopeType==='hq'?u.department:scopeType==='personal'?u.id:'org';
- const allowedKinds=isDirector(u)?V11_KINDS_LIST.filter(k=>!V11_KINDS[k].personalOnly||u.role==='country_director'):V11_KINDS_LIST.filter(k=>canCreate(u,k,scopeType,scopeId));
+ const allowedKinds=isDirector(u)?V11_KINDS_LIST.filter(k=>!!V11_KINDS[k]):V11_KINDS_LIST.filter(k=>canCreate(u,k,scopeType,scopeId));
  return {v11:{records:db.all('v11_records').filter(r=>canRead(u,r)),
   capabilities:{director:isDirector(u),oversight:isDirector(u),canApprove:granted(u,'v11:approve'),canPublish:granted(u,'v11:publish'),canEditManual:granted(u,'v11:edit_manual'),allowedKinds,canUploadFile:scopeType!=='personal'||(u.adminPermissions||[]).includes('v11:upload_file'),defaultScopeType:scopeType,defaultScopeId:scopeId,hqReports:isDirectorRole(u)||hqLeader(u)},
   files:db.all('v11_files').filter(f=>canReadFile(u,f)).map(f=>({id:f.id,name:f.name,type:f.type,size:f.size,scopeType:f.scopeType,scopeId:f.scopeId,ownerId:f.ownerId,status:f.status,createdAt:f.createdAt,...(isDirector(u)?{allowedUserIds:f.allowedUserIds||[]}:{} )}))}};
