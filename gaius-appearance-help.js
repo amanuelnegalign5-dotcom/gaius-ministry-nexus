@@ -48,7 +48,7 @@ const guides={
  centerAttendance:['የማዕከል መገኘት','Center attendance','እሁድና ከማክሰኞ እስከ ቅዳሜ አንድ ሳምንታዊ ስብሰባ። የራስዎን መዝገብ ይፈትሹ፤ የመመዝገብ ፈቃድ ካለ ያስገቡ።','Sunday program plus one weekly meeting Tuesday–Saturday. Review your attendance; manage the roster only if authorized.'],
  charters:['የክፍል ኃላፊነት','Department charters','የሚታዩትን የክፍል ዓላማና ውጤቶች ያንብቡ።','Read the displayed department purpose and deliverables.']
 };
-let context=null;
+
 function currentGuide(){
  const auth=!document.getElementById('auth').classList.contains('hide');
  if(auth)return {key:'auth',nav:[]};
@@ -57,16 +57,21 @@ function currentGuide(){
  let key=nav.find(x=>x.button.classList.contains('on'))?.key||'profilePage';
  const gov=document.querySelector('#governancePanel');
  if(gov&&nexus){const tab=gov.dataset.helpTab;if(tab)key=tab==='attendance'?'centerAttendance':tab==='grants'?'delegation':tab;}
- return {key,nav};
+ const selector=nexus&&key==='records'?document.querySelector('#v11Kind'):null;
+ if(selector?.value==='centerAttendance')key='centerAttendance';
+ return {key,nav,nexus,selector,gov};
 }
 function showHelp(){
- const {key,nav}=currentGuide();const g=guides[key]||guides.overview;
+ const {key,nav,nexus,selector,gov}=currentGuide();const g=guides[key]||guides.overview;
  dialog.replaceChildren();
  const header=node('div',null,{class:'helphead'}),close=node('button',tr('ዝጋ','Close'),{class:'btn ghost',type:'button'});close.onclick=()=>dialog.close();header.append(node('h2',tr('ስለ GAIUS Nexus እና የአጠቃቀም መመሪያ','About GAIUS Nexus & user guide'),{id:'nexusHelpTitle'}),close);dialog.append(header);
  dialog.append(node('p',tr('የጋይዮስ አገልግሎት የአመራር፣ ዕቅድ፣ ሪፖርት፣ መገኘትና ክትትል ሥርዓት።','GAIUS Ministry’s workspace for leadership, planning, reporting, attendance and follow-up.')));
  if(key!=='auth'){const who=document.getElementById('who')?.textContent||'';dialog.append(node('p',who,{class:'muted'}));}
  const cur=node('section',null,{class:'helpcurrent'});cur.append(node('h3',tr('አሁን ያሉበት ገጽ፦ ','Current page: ')+tr(g[0],g[1])),node('p',tr(g[2],g[3])));dialog.append(cur);
+ if(selector){const block=node('section',null,{class:'helpsection'});block.append(node('h3',tr('የሚታዩ የሥራ መዝገቦች','Available record modules')));for(const o of selector.options){const b=node('button',o.textContent,{type:'button',class:'helplink'});b.onclick=()=>{dialog.close();if(selector.isConnected){selector.value=o.value;selector.dispatchEvent(new Event('change',{bubbles:true}));}};const row=node('div');row.append(b);if(o.selected)row.append(node('span',tr(' · የአሁኑ',' · Current'),{class:'muted'}));block.append(row);}block.append(node('p',document.querySelector('#v11form')?tr('የዚህ ገጽ የማስገቢያ ቅጽ አለ።','An entry form is available on this page.'):tr('የዚህ ገጽ መዝገቦችን ብቻ ይመልከቱ።','This page currently has no entry form.')));dialog.append(block);}
+ if(gov){const block=node('section',null,{class:'helpsection'});block.append(node('h3',tr('የሚታዩ የአስተዳደር ክፍሎች','Available governance modules')));for(const b of gov.querySelectorAll('nav button')){const link=node('button',b.textContent,{type:'button',class:'helplink'});link.onclick=()=>{dialog.close();if(b.isConnected)b.click();};const row=node('div');row.append(link);block.append(row);}dialog.append(block);}
  if(nav.length){const section=node('section',null,{class:'helpsection'});section.append(node('h3',tr('በመለያዎ የሚታዩ ገጾች','Pages available to your account')));const ul=node('ul');for(const item of nav){const li=node('li'),b=node('button',item.label,{type:'button',class:'helplink'});b.onclick=()=>{dialog.close();if(item.button.isConnected)item.button.click();};li.append(b);const d=guides[item.key];if(d)li.append(node('p',tr(d[2],d[3]),{class:'muted'}));ul.append(li);}section.append(ul);dialog.append(section);}
+ if(key!=='auth'){const destination=document.querySelector(nexus?'#gaiusV11 [data-v="close"]':'#v11launch');if(destination&&!destination.hidden&&getComputedStyle(destination).display!=='none'){const link=node('button',nexus?tr('ወደ ነባር ገጾች','Back to existing pages'):tr('ወደ Nexus የሥራ ቦታ','Open Nexus workspace'),{type:'button',class:'btn ghost'});link.onclick=()=>{dialog.close();destination.click();};dialog.append(link);}}
  dialog.append(node('h3',tr('ፈቃድና ግላዊነት','Access & privacy')),node('p',tr('የሚታዩት ገጾች በሚናዎና በተሰጠው ፈቃድ ይወሰናሉ። የጎደለ ፈቃድ ካለ ዳይሬክተርዎን ያነጋግሩ። የይለፍ ቃልና ሚስጥራዊ መረጃ አያጋሩ።','Visible pages depend on your role and grants. Contact your director if access is missing. Never share passwords or confidential records.')),node('h3',tr('የገጽ ቀለም','Appearance')),node('p',tr('Light፣ Dark ወይም System ይምረጡ። ምርጫዎ በዚህ Browser ይቀመጣል።','Choose Light, Dark or System in the header. Your preference is saved in this browser.')));
  if(!dialog.open)dialog.showModal();
 }
