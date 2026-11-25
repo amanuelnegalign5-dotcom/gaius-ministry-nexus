@@ -22,5 +22,11 @@
       ]
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "MEDIA_BUCKET",
+      "bucket_name": "gaius-nexus-private-media"
+    }
+  ],
   "keep_vars": true
 }
