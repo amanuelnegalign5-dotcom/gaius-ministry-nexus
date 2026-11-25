@@ -34,6 +34,8 @@ jobs:
           node --check gaius-v11-core.js
           node --check gaius-app.js
           node --check gaius-v11-ui.js
+          node --check gaius-governance-service.js
+          node --check gaius-governance-ui.js
 
   deploy-backend:
     needs: verify
@@ -72,6 +74,7 @@ jobs:
             index.html manifest.webmanifest sw.js
             gaius-config.js gaius-app.js gaius-store.js gaius-core.js gaius-report-policy.js
             gaius-v11-core.js gaius-v11-model.js gaius-v11-ui.js
+            gaius-governance-ui.js gaius-department-charters.js
             gaius-v11-export.js gaius-nexus-analytics.js gaius-v11.css gaius-brand.css
           )
           for file in "${files[@]}"; do
