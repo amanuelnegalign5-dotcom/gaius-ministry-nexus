@@ -16,6 +16,14 @@ let analysisFilters={month:'',center:'',department:'',ethiopianYear:'',ethiopian
 const root=document.createElement('section');root.id='gaiusV11';root.className='v11root';root.hidden=true;
 const app=$('app'),oldMain=app.querySelector('main'),header=app.querySelector('header .actions')||app.querySelector('header');
 const launch=document.createElement('button');launch.type='button';launch.className='btn ghost';launch.id='v11launch';launch.textContent='✦ '+text('ጋይዮስ ኔክሰስ','Gaius Nexus');header.prepend(launch);app.append(root);
+const centerNav=document.createElement('nav');centerNav.id='centerWorkspaceNav';centerNav.className='wrap centerWorkspaceNav';centerNav.hidden=true;app.querySelector('header').append(centerNav);
+function centerLinks(ctx){const c=ctx?.capabilities||{},read=c.readableKinds||c.allowedKinds||[],center=ctx?.me?.center;return [{section:'overview',am:'የማዕከል ሥራ',en:'Center workspace'},...center?[...read.includes('plans6')?[{section:'records',kind:'plans6',am:'ዕቅዶች',en:'Center plans'}]:[],...read.includes('monthly')?[{section:'records',kind:'monthly',am:'ሪፖርቶች',en:'Center reports'}]:[],...read.includes('centerAttendance')?[{section:'records',kind:'centerAttendance',am:'መገኘት',en:'Center attendance'}]:[],...ctx.shared?[{section:'governance',tab:'child',am:'የጋይዮስ ልጆች',en:'Gaius Lijoch'},{section:'governance',tab:'mentee',am:'መካሪነት',en:'Mentorship'},{section:'governance',tab:'progress',am:'ዕቅድ ክትትል',en:'Plan progress'}]:[],...c.canUploadFile?[{section:'files',am:'ሰነዶች',en:'Files'}]:[]]:[]];}
+function drawCenterNav(){const ctx=window.GAIUS_NAV_CONTEXT;centerNav.replaceChildren();centerNav.hidden=!isCenterAccount(ctx?.me);if(centerNav.hidden)return;launch.textContent='✦ '+text('የማዕከል ሥራ','Center workspace');for(const link of centerLinks(ctx)){const b=document.createElement('button');b.type='button';b.className='btn ghost';b.textContent=text(link.am,link.en);b.dataset.centerShortcut=link.kind||link.tab||link.section;b.onclick=()=>void openDestination(link);centerNav.append(b);}if(!ctx.me.center){const p=document.createElement('p');p.className='notice';p.textContent=text('የማዕከል ምደባ የለም። ዳይሬክተሩ ትክክለኛውን ማዕከል እንዲመድብ ይጠይቁ።','No center is assigned. Ask your director to assign your actual center before managing center records.');centerNav.append(p);}}
+async function openDestination(link){if(opening)return;editing=null;if(link.kind)kind=link.kind;requestedGovernanceTab=link.tab||null;if(active){section=link.section;try{await update();}catch(e){alertMsg(e.message,true);}}else await open(link.section);}
+let requestedGovernanceTab=null;
+window.addEventListener('gaius:nexus-state-refreshed',()=>{drawCenterNav();if(active&&!opening)void update().catch(e=>alertMsg(e.message,true));});
+window.addEventListener('gaius:nexus-session-cleared',()=>{centerNav.hidden=true;centerNav.replaceChildren();});
+$('langApp')?.addEventListener('change',drawCenterNav);if(window.GAIUS_NAV_CONTEXT)drawCenterNav();
 function alertMsg(m,error=false){const x=$('v11notice');if(x){x.textContent=String(m||'');x.className='v11notice '+(error?'v11error':'');x.hidden=false;}}
 async function load(){
  try{
@@ -36,7 +44,7 @@ async function load(){
 const directorRole=role=>role==='country_director'||role==='international_director';
 let autoOpenedDirectorId=null,opening=false,viewEpoch=0;
 function showOpenError(e){
- const message=text('የDirector Workspace መክፈት አልተቻለም፦ ','Could not open Director workspace: ')+(e?.message||String(e));
+ const message=text('የሥራ ቦታ መክፈት አልተቻለም፦ ','Could not open workspace: ')+(e?.message||String(e));
  const notice=$('feedback');
  if(notice){notice.replaceChildren();notice.textContent=message;notice.classList.remove('hide');notice.classList.add('error');}
  else alert(message);
@@ -57,7 +65,8 @@ async function open(requestedSection=null){
   if(epoch!==viewEpoch)return; // user signed out or closed while data loaded
   if(requestedSection==='delegation'&&caps().director&&store.shared)section='delegation';
   else if(directorRole(my().role)&&caps().director)section='director';
-  else if(section==='director')section='overview';
+  else if(requestedSection&&requestedSection!=='delegation')section=requestedSection;
+  else section='overview';
   active=true;
   app.classList.add('nexus-mode');
   root.hidden=false;
@@ -93,6 +102,7 @@ launch.onclick=()=>{
 // any preserved v10 pages. Other roles keep their existing restricted landing pages.
 function maybeAutoOpen(identity={}){
  if(!identity.id||autoOpenedDirectorId===identity.id)return;
+ drawCenterNav();
  if(!directorRole(identity.role)&&!['center_senior_leader','center_leader','center_department_leader','potential_center_leader','potential_department_leader'].includes(identity.role))return;
  autoOpenedDirectorId=identity.id;
  void open();
@@ -111,7 +121,7 @@ const my=()=>state?.me||{};const caps=()=>state?.v11?.capabilities||{};const rec
 const mine=()=>caps().defaultScopeType||(my().center?'center':my().department?'hq':'personal');
 const appStrings={director:['የዳይሬክተር ሥራ','Director workspace'],analytics:['የማዕከላት ትንታኔ','Center analytics'],overview:['ዋና እይታ','Overview'],records:['ሥራ መዝገቦች','Operations'],files:['የሰነድ ማከማቻ','File uploads'],offline:['ያልተላኩ ረቂቆች','Offline drafts'],governance:['የጋይዮስ አስተዳደር','Governance'],delegation:['ውክልናና ፈቃድ','Delegation & permissions'],reference:['የድርጅት ስሞች','Official names']};
 const tr=s=>appStrings[s]?(localLang()==='am'?appStrings[s][0]:appStrings[s][1]):s;
-function frame(content){root.innerHTML=`<div class="v11wrap"><div class="v11top"><div class="v11identity"><img class="v11logo" src="./icons/official-logo.jpg" alt="Gaius Ministry logo"><div><h1>Gaius Nexus <small>v11.2.7</small></h1><p>${text('የድርጅት አመራር፣ እቅድ፣ ሪፖርትና ክትትል','Ministry leadership, planning, reporting and follow-up')}</p></div></div><button type="button" class="btn ghost" data-v="close">${text('ወደ v10 ገጾች','Back to existing pages')}</button></div>
+function frame(content){root.innerHTML=`<div class="v11wrap"><div class="v11top"><div class="v11identity"><img class="v11logo" src="./icons/official-logo.jpg" alt="Gaius Ministry logo"><div><h1>Gaius Nexus <small>v11.2.8</small></h1><p>${text('የድርጅት አመራር፣ እቅድ፣ ሪፖርትና ክትትል','Ministry leadership, planning, reporting and follow-up')}</p></div></div><button type="button" class="btn ghost" data-v="close">${text('ወደ v10 ገጾች','Back to existing pages')}</button></div>
   <div class="v11nav">${Object.keys(appStrings).filter(x=>x==='director'?caps().director:x==='delegation'?caps().director&&store.shared&&!state.offlineOnly:x==='analytics'?(caps().director||caps().oversight):x==='records'?myAvailableKinds().length>0:x==='files'?(caps().canUploadFile||(state?.v11?.files||[]).length>0):x==='governance'?store.shared&&!state.offlineOnly&&(caps().director||mine()==='center'||!!my().center||caps().hqReports||eligibleDelegate(my())):true).map(x=>`<button class="${section===x?'on':''}" type="button" data-v="section" data-section="${x}">${tr(x)}</button>`).join('')}</div><div id="v11notice" class="v11notice" hidden></div><div class="v11content">${content}</div></div>`;}
 function tile(title,value,desc=''){return `<div class="v11tile"><span>${escape(title)}</span><strong>${escape(value)}</strong><small>${escape(desc)}</small></div>`;}
 function dashboard(){const all=records().filter(r=>r.kind!=='centers'&&r.kind!=='centerUnits');const approved=all.filter(r=>r.status==='approved'),pending=all.filter(r=>r.status==='submitted');
@@ -120,9 +130,9 @@ function dashboard(){const all=records().filter(r=>r.kind!=='centers'&&r.kind!==
  const today=new Date().toISOString().slice(0,10),in14=new Date(Date.now()+14*86400000).toISOString().slice(0,10);
  const incomplete=all.filter(r=>r.data?.due&&r.data.due<today&&r.status!=='approved'&&r.status!=='archived');
  const upcoming=all.filter(r=>{const due=r.data?.due||r.data?.date||r.data?.reviewDate||r.data?.next;return due&&due>=today&&due<=in14;}).slice(0,12);
- frame(`<div class="v11guide">${text('ይህ ዳሽቦርድ ከተፈቀዱ መዝገቦች ብቻ ይሰላል። ያልተላኩ ረቂቆች እና አሁን ያልተገናኙ ማዕከላት በቁጥሮች አይካተቱም።','Only authorized saved records contribute to this dashboard. Unsubmitted drafts and unintegrated center data are excluded.')}</div>
+ frame(`${isCenterAccount(my())?'<div class="v11box"><h2>'+escape(text('የማዕከል ዋና ገጽ','My center workspace'))+'</h2><p>'+escape(my().center||text('ማዕከል አልተመደበም። ዳይሬክተሩን ያነጋግሩ።','No center assigned. Contact your director.'))+'</p></div>':''}<div class="v11guide">${text('ይህ ዳሽቦርድ ከተፈቀዱ መዝገቦች ብቻ ይሰላል። ያልተላኩ ረቂቆች እና አሁን ያልተገናኙ ማዕከላት በቁጥሮች አይካተቱም።','Only authorized saved records contribute to this dashboard. Unsubmitted drafts and unintegrated center data are excluded.')}</div>
  <div class="v11tiles">${tile(text('የቀረቡ ጉዳዮች','Pending review'),pending.length)}${tile(text('የጸደቁ ጉዳዮች','Approved'),approved.length)}${tile(text('የማዕከላት መዝገብ','Centers'),centers.length)}${tile(text('ወርሃዊ ሪፖርቶች','Monthly reports'),month.length)}${tile(text('ያለፈ ቀነ ገደብ','Overdue'),incomplete.length)}${caps().director||caps().oversight?tile(text('የእሁድ ተሳታፊዎች ድምር','Sunday participants, recorded'),total('sundayProgram')):''}</div>
- <div class="v11box"><h2>${text('የቅርብ ጊዜ ሥራዎች','Recent activities')}</h2>${all.slice().sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)).slice(0,8).map(card).join('')||'<p>—</p>'}</div><div class="v11box"><h2>${text('በ14 ቀናት ውስጥ የሚደርሱ ስብሰባዎችና ሥራዎች','Upcoming meetings and deadlines (14 days)')}</h2>${upcoming.map(card).join('')||'<p>—</p>'}</div>`);
+ <div class="v11box"><h2>${text('የቅርብ ጊዜ ሥራዎች','Recent activities')}</h2>${all.slice().sort((a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||''))).slice(0,8).map(card).join('')||'<p>—</p>'}</div><div class="v11box"><h2>${text('በ14 ቀናት ውስጥ የሚደርሱ ስብሰባዎችና ሥራዎች','Upcoming meetings and deadlines (14 days)')}</h2>${upcoming.map(card).join('')||'<p>—</p>'}</div>`);
 }
 function myAvailableKinds(){return (caps().readableKinds||caps().allowedKinds||[]).filter(k=>V11_KINDS[k]);}
 const opts=(values,selected)=>values.map(([v,l])=>`<option value="${escape(v)}" ${String(v)===String(selected)?'selected':''}>${escape(l)}</option>`).join('');
@@ -194,7 +204,7 @@ function card(r){const def=V11_KINDS[r.kind]||{},data=r.data||{};const title=dat
 }
 function recordsScreen(){const list=myAvailableKinds(),def=V11_KINDS[kind];if(!list.includes(kind))kind=list[0]||'plans6';
  if(!list.length){frame(`<div class="v11box"><p>${text('ለዚህ ሚና የሥራ መዝገብ ማስገባት አልተፈቀደም።','No record-editing modules are assigned to this role.')}</p></div>`);return;}
- const chosen=records().filter(r=>r.kind===kind&&r.status!=='archived').sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
+ const chosen=records().filter(r=>r.kind===kind&&r.status!=='archived').sort((a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||'')));
  frame(`<div class="v11box"><label class="v11field"><span>${text('የሥራ ክፍል ምረጥ','Choose module')}</span><select id="v11Kind">${opts(list.map(x=>[x,text(V11_KINDS[x].am,V11_KINDS[x].en)]),kind)}</select></label><p class="v11guide">${kind==='manuals'?text('የጋይዮስ መመሪያንና የትምህርት ሂደትን በሙሉ ጽሑፍ በዚህ ገጽ ይያዙ። የግል ሰነዶችን በይፋ ወደ GitHub አትጫኑ።','Import the complete manual and teaching roadmap securely here. Do not publish confidential source documents in GitHub.'):text('በአማርኛና English የሚሠራ የተዋቀረ መዝገብ።','Structured bilingual records.')}</p></div>${(caps().allowedKinds||[]).includes(kind)?formHTML(editing):''}<div class="v11box"><h2>${text('የተፈቀዱ መዝገቦች','Visible records')} (${chosen.length})</h2>${chosen.map(card).join('')||'<p class="v11muted">'+text('ገና መዝገብ የለም','No records yet')+'</p>'}</div>${kind==='monthly'&&caps().director?legacyReports():''}`);
 }
 function legacyReports(){const items=window.GAIUS_V10?.originals||[];return `<div class="v11box"><h2>${text('የv10 የጥቅምት ስድስት ኦሪጅናል ሪፖርቶች','Six preserved v10 October source reports')}</h2><p class="v11guide">${text('ይህ የታሪካዊ ጽሑፍ ነው፤ አዲስ ሪፖርት አይደለም።','Historical originals, not newly submitted reports.')}</p>${items.map((r,i)=>`<article class="v11record"><h3>${escape(localLang()==='am'?r.amTitle:r.enTitle)}</h3><details><summary>${text('ይዘት አሳይ','Show content')}</summary><pre class="v11body">${escape(localLang()==='am'?r.am:r.en)}</pre></details><button type="button" data-v="legacy-export" data-legacy="${i}" data-as="docx">Word</button> <button type="button" data-v="legacy-export" data-legacy="${i}" data-as="pdf">PDF</button></article>`).join('')}</div>`;}
@@ -306,10 +316,11 @@ function analyticsScreen(){
  ${selectedCenter?`<div class="v11box"><h2>${text('የተመረጠ ማዕከል','Selected center')}: ${escape(selectedCenter)}</h2>${all.filter(r=>r.scopeType==='center'&&r.scopeId===selectedCenter&&['monthly','followups'].includes(r.kind)&&r.status==='approved').map(card).join('')||'<p>No Data</p>'}</div>`:''}`);
 }
 async function render(){if(!active)return;
- const appNow=localLang();launch.textContent='✦ '+(appNow==='am'?'ጋይዮስ ኔክሰስ':'Gaius Nexus');
+ const appNow=localLang();launch.textContent='✦ '+(isCenterAccount(my())?text('የማዕከል ሥራ','Center workspace'):(appNow==='am'?'ጋይዮስ ኔክሰስ':'Gaius Nexus'));
  window.dispatchEvent(new Event('gaius:nexus-governance-close'));
  if(section==='delegation'&&!caps().director)section='overview';
- if(section==='governance'||section==='delegation'){frame('<div id="v11GovernanceMount"></div>');window.dispatchEvent(new CustomEvent('gaius:nexus-governance-open',{detail:{tab:section==='delegation'?'grants':null}}));}else if(section==='director')directorScreen();else if(section==='analytics')analyticsScreen();else if(section==='overview')dashboard();else if(section==='records')recordsScreen();else if(section==='files')filesScreen();else if(section==='offline')await offlineScreen();else reference();
+ if(section==='governance'||section==='delegation'){frame('<div id="v11GovernanceMount"></div>');window.dispatchEvent(new CustomEvent('gaius:nexus-governance-open',{detail:{tab:section==='delegation'?'grants':requestedGovernanceTab}}));}else if(section==='director')directorScreen();else if(section==='analytics')analyticsScreen();else if(section==='overview')dashboard();else if(section==='records')recordsScreen();else if(section==='files')filesScreen();else if(section==='offline')await offlineScreen();else reference();
+ requestedGovernanceTab=null;
  if(state.offlineOnly)alertMsg(text('ያለ ኢንተርኔት የረቂቅ ሁኔታ ብቻ ነው። የኦንላይን መረጃ አልተጫነም።','Offline draft-only mode; no live organizational data is loaded.'));
  await loadMediaPreviews();}
 async function loadMediaPreviews(){for(const img of root.querySelectorAll('img[data-v11-media]')){const f=state.v11.files?.find(f=>f.id===img.dataset.v11Media);if(!f||!f.type.startsWith('image/'))continue;try{const blob=await store.downloadFile(f.id);const url=URL.createObjectURL(blob);img.src=url;img.hidden=false;img.onload=()=>setTimeout(()=>URL.revokeObjectURL(url),1000*60*2);}catch{}}}
