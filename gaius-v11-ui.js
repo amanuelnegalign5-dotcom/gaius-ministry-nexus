@@ -19,15 +19,15 @@ const launch=document.createElement('button');launch.type='button';launch.classN
 const centerNav=document.createElement('nav');centerNav.id='centerWorkspaceNav';centerNav.className='wrap centerWorkspaceNav';centerNav.hidden=true;app.querySelector('header').append(centerNav);
 function centerLinks(ctx){const c=ctx?.capabilities||{},read=c.readableKinds||c.allowedKinds||[],center=ctx?.me?.center;return [{section:'overview',am:'የማዕከል ሥራ',en:'Center workspace'},...center?[...read.includes('plans6')?[{section:'records',kind:'plans6',am:'ዕቅዶች',en:'Center plans'}]:[],...read.includes('monthly')?[{section:'records',kind:'monthly',am:'ሪፖርቶች',en:'Center reports'}]:[],...read.includes('centerAttendance')?[{section:'records',kind:'centerAttendance',am:'መገኘት',en:'Center attendance'}]:[],...ctx.shared?[{section:'governance',tab:'child',am:'የጋይዮስ ልጆች',en:'Gaius Lijoch'},{section:'governance',tab:'mentee',am:'መካሪነት',en:'Mentorship'},{section:'governance',tab:'progress',am:'ዕቅድ ክትትል',en:'Plan progress'}]:[],...c.canUploadFile?[{section:'files',am:'ሰነዶች',en:'Files'}]:[]]:[]];}
 function drawCenterNav(){const ctx=window.GAIUS_NAV_CONTEXT;centerNav.replaceChildren();centerNav.hidden=!isCenterAccount(ctx?.me);if(centerNav.hidden)return;launch.textContent='✦ '+text('የማዕከል ሥራ','Center workspace');for(const link of centerLinks(ctx)){const b=document.createElement('button');b.type='button';b.className='btn ghost';b.textContent=text(link.am,link.en);b.dataset.centerShortcut=link.kind||link.tab||link.section;b.onclick=()=>void openDestination(link);centerNav.append(b);}if(!ctx.me.center){const p=document.createElement('p');p.className='notice';p.textContent=text('የማዕከል ምደባ የለም። ዳይሬክተሩ ትክክለኛውን ማዕከል እንዲመድብ ይጠይቁ።','No center is assigned. Ask your director to assign your actual center before managing center records.');centerNav.append(p);}}
-async function openDestination(link){if(opening)return;editing=null;if(link.kind)kind=link.kind;requestedGovernanceTab=link.tab||null;if(active){section=link.section;try{await update();}catch(e){alertMsg(e.message,true);}}else await open(link.section);}
+async function openDestination(link){if(opening)return;editing=null;if(link.kind)kind=link.kind;requestedGovernanceTab=link.tab||null;if(active){section=link.section;try{await update(true);}catch(e){alertMsg(e.message,true);}}else await open(link.section);}
 let requestedGovernanceTab=null;
-window.addEventListener('gaius:nexus-state-refreshed',()=>{drawCenterNav();if(active&&!opening)void update().catch(e=>{close();root.replaceChildren();state=null;showOpenError(e);});});
+window.addEventListener('gaius:nexus-state-refreshed',()=>{drawCenterNav();if(active&&!opening)void update(true).catch(e=>{close();root.replaceChildren();state=null;showOpenError(e);});});
 window.addEventListener('gaius:nexus-session-cleared',()=>{centerNav.hidden=true;centerNav.replaceChildren();});
 $('langApp')?.addEventListener('change',drawCenterNav);if(window.GAIUS_NAV_CONTEXT)drawCenterNav();
 function alertMsg(m,error=false){const x=$('v11notice');if(x){x.textContent=String(m||'');x.className='v11notice '+(error?'v11error':'');x.hidden=false;}}
-async function load(){
+async function load(reuse=false){
  try{
-  state=await store.state();
+  state=await store.state({reuse});
   if(state.onboarding)throw Error(text('መጀመሪያ መገለጫዎን ያጠናቅቁ','Complete your profile first'));
   // Only a minimal identity marker is cached; never cache organizational lists
   // or confidential backend records in offline session storage.
@@ -61,7 +61,7 @@ async function open(requestedSection=null){
  oldMain.style.display='none';
  root.innerHTML='<div class="v11wrap"><div class="v11box" role="status" aria-live="polite">Loading Gaius Nexus… / ጋይዮስ ኔክሰስ እየተከፈተ ነው…</div></div>';
  try{
-  await load();
+  await load(true);
   if(epoch!==viewEpoch)return; // user signed out or closed while data loaded
   if(requestedSection==='delegation'&&caps().director&&store.shared)section='delegation';
   else if(directorRole(my().role)&&caps().director)section='director';
@@ -331,9 +331,18 @@ async function render(){if(!active)return;
  if(section==='governance'||section==='delegation'){frame('<div id="v11GovernanceMount"></div>');window.dispatchEvent(new CustomEvent('gaius:nexus-governance-open',{detail:{tab:section==='delegation'?'grants':requestedGovernanceTab}}));}else if(section==='director')directorScreen();else if(section==='analytics')analyticsScreen();else if(section==='overview')dashboard();else if(section==='records')recordsScreen();else if(section==='files')filesScreen();else if(section==='offline')await offlineScreen();else reference();
  requestedGovernanceTab=null;
  if(state.offlineOnly)alertMsg(text('ያለ ኢንተርኔት የረቂቅ ሁኔታ ብቻ ነው። የኦንላይን መረጃ አልተጫነም።','Offline draft-only mode; no live organizational data is loaded.'));
- await loadMediaPreviews();}
-async function loadMediaPreviews(){for(const img of root.querySelectorAll('img[data-v11-media]')){const f=state.v11.files?.find(f=>f.id===img.dataset.v11Media);if(!f||!f.type.startsWith('image/'))continue;try{const blob=await store.downloadFile(f.id);const url=URL.createObjectURL(blob);img.src=url;img.hidden=false;img.onload=()=>setTimeout(()=>URL.revokeObjectURL(url),1000*60*2);}catch{}}}
-async function update(){const epoch=viewEpoch;await load();if(epoch!==viewEpoch||!active)return;await render();}
+ void loadMediaPreviews();}
+async function loadMediaPreviews(){
+ const images=Array.from(root.querySelectorAll('img[data-v11-media]'));
+ // Limit concurrent private downloads; don't block the page or retain old blob URLs.
+ const epoch=viewEpoch;
+ async function next(){while(images.length&&active&&epoch===viewEpoch){const img=images.shift();if(!img.isConnected)continue;
+ const f=state?.v11?.files?.find(f=>f.id===img.dataset.v11Media);if(!f||!f.type.startsWith('image/'))continue;
+ try{const blob=await store.downloadFile(f.id);if(!img.isConnected||epoch!==viewEpoch||!active)continue;
+ const url=URL.createObjectURL(blob);img.onload=img.onerror=()=>URL.revokeObjectURL(url);img.src=url;img.hidden=false;setTimeout(()=>URL.revokeObjectURL(url),120000);}catch{}}}
+ await Promise.all([next(),next(),next()]);
+}
+async function update(reuse=false){const epoch=viewEpoch;await load(reuse);if(epoch!==viewEpoch||!active)return;await render();}
 async function withBusy(fn){if(queueBusy)return;queueBusy=true;try{await fn();}catch(e){alertMsg(e.message,true);}finally{queueBusy=false;}}
 function serializedForm(){const form=$('v11form');if(!form.reportValidity())return null;
  const selected=$('v11AuthorizedScope');const target=selected&&!editing?caps().createScopes?.[kind]?.[Number(selected.value)]:null;
@@ -428,7 +437,7 @@ root.addEventListener('click',e=>{const b=e.target.closest('[data-v]');if(!b)ret
  if(op==='showCenter'){selectedCenter=b.dataset.center;section='analytics';render();return;}
  if(op==='openKind'){kind=b.dataset.kind;editing=null;section='records';await render();return;}
  if(op==='completeVisit'){const item=records().find(r=>r.id===id);if(!item)throw Error('missing');if(!item.data.actualDate||!item.data.observations)throw Error(text('መጀመሪያ የተጎበኘበትን ቀንና የታዩትን ነገሮች በEdit ሙላ','Edit visit to enter actual date and observations first'));await store.command('v11.completeVisit',{id,version:item._v,actualDate:item.data.actualDate,observations:item.data.observations});await update();return;}
- if(op==='section'){if(!availableSections().includes(b.dataset.section))return;section=b.dataset.section;editing=null;await update();return;}
+ if(op==='section'){if(!availableSections().includes(b.dataset.section))return;section=b.dataset.section;editing=null;await update(true);return;}
  if(op==='cancel'){editing=null;render();return;}
  if(op==='edit'){const obj=records().find(r=>r.id===id);if(!obj)throw Error('missing');if(!obj.actions?.edit)throw Error('forbidden');kind=obj.kind;editing=obj;section='records';render();root.querySelector('#v11form')?.scrollIntoView({block:'start'});return;}
  if(op==='transition'){await transition(id,b.dataset.decision);return;}
