@@ -91,6 +91,7 @@ function close(){
  root.hidden=true;
  app.classList.remove('nexus-mode');
  oldMain.style.display='';
+ window.dispatchEvent(new Event('gaius:nexus-legacy-open'));
 }
 // Tapping the launcher while the director workspace is already visible must NOT
 // make it disappear; the separate "Back to existing pages" control closes it.
