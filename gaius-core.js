@@ -1,6 +1,6 @@
 // Shared domain rules for the v10 workspace, updated to v11.
 import {v11Command,v11State,approveFile} from './gaius-v11-core.js';
-import {isHQReporter,isNineHQDepartment,isDirectorRole,classifiedPermissions,legacyPermission,eligibleDelegate,isCenterAccount} from './gaius-report-policy.js';
+import {isHQReporter,isNineHQDepartment,isDirectorRole,classifiedPermissions,legacyPermission,eligibleDelegate,isCenterAccount,CENTER_PERMISSION_KEYS} from './gaius-report-policy.js';
 export const roleDepartments = {
   media_leader:'Media', followup_leader:'Follow-up', service_leader:'Service Coordination',
   counseling_leader:'Counseling and Support', research_leader:'Research and Training', event_leader:'Event',
@@ -11,7 +11,7 @@ export const roleDepartments = {
   center_senior_leader:'',staff:'',center_leader:'',potential_center_leader:'',center_department_leader:'',potential_department_leader:'',volunteer:'',hq_staff:''
 };
 export const directors = ['country_director','international_director'];
-export const permissions = ['reports','review_reports','review_plans','comments','attendance','announcements','projects','documents','manage_users','v11:oversight','v11:approve','v11:publish','v11:teaching','v11:edit_manual','v11:upload_file'];
+export const permissions = ['reports','review_reports','review_plans','comments','attendance','announcements','projects','documents','manage_users','v11:oversight','v11:approve','v11:publish','v11:teaching','v11:edit_manual','v11:upload_file',...CENTER_PERMISSION_KEYS];
 export const sourceIds = ['event','counseling','research','followup','service','media'];
 export const seedPeople = [
   {id:'selam',name:'Selam',role:'service_leader',regular:false},
