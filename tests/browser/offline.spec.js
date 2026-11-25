@@ -77,7 +77,7 @@ test('extended workspace restores director navigation, reads cached records and 
   if(path.endsWith('/info'))return route.fulfill({json:{bootstrap:false,emailRecovery:false},headers});
   if(path.endsWith('/state'))return route.fulfill({json:snapshot,headers});
   if(path.endsWith('/file/download'))return route.fulfill({status:200,body:fileBody,headers:{...headers,'content-type':'application/pdf'}});
-  if(path.endsWith('/command')){const data=route.request().postDataJSON();if(data.action==='v11.save'){writes.push(data);return route.fulfill({status:409,json:{error:'conflict'},headers});}}
+  if(path.endsWith('/command')){const data=route.request().postDataJSON();if(data.action==='v11.save'){writes.push(data);if(data.payload.version===5){record._v=6;record.data=data.payload.data;return route.fulfill({json:{id:record.id},headers});}return route.fulfill({status:409,json:{error:'conflict'},headers});}}
   return route.fulfill({status:400,json:{error:'unknown'},headers});
  });
  await page.addInitScript(({api})=>{localStorage.gLang='en';sessionStorage.setItem('gaius.v10.session:'+api,'synthetic-director-token');},{api});
@@ -119,7 +119,13 @@ test('extended workspace restores director navigation, reads cached records and 
  expect(writes[0].payload.data.result).toBe('Edited offline');
  await expect(page.locator('#gaiusV11')).toContainText('conflict');
  await expect(page.locator('#gaiusV11 [data-v="dropEncrypted"]')).toHaveCount(1);
+ record._v=5;record.data.title='Changed online title';
  file.offlineAllowed=false;file.updatedAt='2026-11-26T00:00:00.000Z';
  await page.locator('#gaiusV11 [data-v="sync"]').click();
  await expect.poll(async()=>page.evaluate(async()=>{const v=await import('./gaius-offline-vault.js');return (await v.cachedFiles('director-offline')).length;})).toBe(0);
+ await expect(page.locator('#gaiusV11 [data-v="dropEncrypted"]')).toHaveCount(0);
+ expect(writes.at(-1).payload.version).toBe(5);
+ expect(writes.at(-1).payload.data.title).toBe('Changed online title');
+ expect(writes.at(-1).payload.data.result).toBe('Edited offline');
+ expect(writes.at(-1).requestId).toBe(writes[0].requestId);
 });
