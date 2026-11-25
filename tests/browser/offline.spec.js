@@ -61,3 +61,53 @@ test('service worker offline reload, encrypted new draft, reconnect sync',async(
  expect(await page.evaluate(()=>sessionStorage.getItem('gaius.offline.localSession'))).toBeNull();
 
 });
+
+test('extended workspace restores director navigation, reads cached records and queues versioned edit without overwriting server',async({page,context})=>{
+ test.setTimeout(90000);
+ const api='https://gaius-nexus-api.amanuelnegalign135.workers.dev';
+ const me={id:'director-offline',name:'Synthetic director',username:'director-offline',role:'country_director',accountStatus:'active',adminPermissions:[],_v:1};
+ const record={id:'report-one',kind:'monthly',scopeType:'hq',scopeId:'Media',ownerId:me.id,ownerName:me.name,status:'draft',_v:4,data:{title:'Cached authorized report',month:'2026-11',activity:'Training',result:'Initial result'},actions:{edit:true,submit:true}};
+ const snapshot={me,authorization:{legacyPages:['dashboard','reports'],offlineMondayRoster:[]},directory:[me],former:[],users:[],reports:[],plans:[],reviews:[],comments:[],attendance:[],projects:[],announcements:[],documents:[],audit:[],v11:{records:[record],files:[],capabilities:{director:true,oversight:true,allowedKinds:['monthly'],readableKinds:['monthly','manuals'],createScopes:{monthly:[{scopeType:'hq',scopeId:'Media'}]},defaultScopeType:'organization',defaultScopeId:'org',canUploadFile:true,hqReports:true}},services:{mediaUploads:true,maxFileBytes:1048576}};
+ let writes=[];
+ await context.route(api+'/**',async route=>{
+  const path=new URL(route.request().url()).pathname,headers={'access-control-allow-origin':'*','access-control-allow-headers':'authorization,content-type','access-control-allow-methods':'POST,OPTIONS'};
+  if(route.request().method()==='OPTIONS')return route.fulfill({status:204,headers});
+  if(path.endsWith('/info'))return route.fulfill({json:{bootstrap:false,emailRecovery:false},headers});
+  if(path.endsWith('/state'))return route.fulfill({json:snapshot,headers});
+  if(path.endsWith('/command')){const data=route.request().postDataJSON();if(data.action==='v11.save'){writes.push(data);return route.fulfill({status:409,json:{error:'conflict'},headers});}}
+  return route.fulfill({status:400,json:{error:'unknown'},headers});
+ });
+ await page.addInitScript(({api})=>{localStorage.gLang='en';sessionStorage.setItem('gaius.v10.session:'+api,'synthetic-director-token');},{api});
+ await page.goto('http://127.0.0.1:4173/index.html');
+ await expect(page.locator('#gaiusV11 .v11nav [data-section="director"]')).toBeVisible();
+ await page.waitForFunction(()=>!!navigator.serviceWorker.controller);
+ await page.locator('#gaiusV11 .v11nav [data-section="offline"]').click();
+ await page.locator('#offlinePassphrase').fill('synthetic-offline-passphrase');
+ await page.locator('#offlineUnlock button').click();
+ await expect(page.locator('#gaiusV11 [data-v="extended"]')).toBeVisible();
+ page.once('dialog',d=>d.accept());
+ await page.locator('#gaiusV11 [data-v="extended"]').click();
+ await expect(page.locator('#gaiusV11 [data-v="extended"]')).toContainText('Disable extended workspace');
+ await context.setOffline(true);
+ await page.locator('#gaiusV11 .v11nav [data-section="director"]').click();
+ await expect(page.locator('#gaiusV11 .v11nav [data-section="director"]')).toHaveClass('on');
+ await page.locator('#gaiusV11 .v11nav [data-section="analytics"]').click();
+ await expect(page.locator('#gaiusV11')).toContainText('Analytics filters');
+ await page.locator('#gaiusV11 .v11nav [data-section="governance"]').click();
+ await expect(page.locator('#gaiusV11')).toContainText('Connect online to access protected information');
+ await page.locator('#gaiusV11 .v11nav [data-section="records"]').click();
+ await page.locator('#v11Kind').selectOption('monthly');
+ await expect(page.locator('#gaiusV11')).toContainText('Cached authorized report');
+ await page.locator('[data-v="edit"][data-id="report-one"]').click();
+ await page.locator('[data-field="result"]').fill('Edited offline');
+ await page.locator('#v11form button[type="submit"]').click();
+ await expect(page.locator('#gaiusV11')).toContainText('Encrypted pending drafts');
+ expect(writes).toHaveLength(0);
+ await context.setOffline(false);
+ await expect.poll(()=>writes.length).toBe(1);
+ expect(writes[0].payload.id).toBe('report-one');
+ expect(writes[0].payload.version).toBe(4);
+ expect(writes[0].payload.data.result).toBe('Edited offline');
+ await expect(page.locator('#gaiusV11')).toContainText('conflict');
+ await expect(page.locator('#gaiusV11 [data-v="dropEncrypted"]')).toHaveCount(1);
+});
