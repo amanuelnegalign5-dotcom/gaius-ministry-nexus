@@ -8,7 +8,7 @@ export const roleDepartments = {
   support_leader:'Support Team Department', establishment_leader:'Department of Centers Establishment',
   international_staff:'International', assisting_staff:'', prayer_staff:'Prayer',
   country_director:'', international_director:'',
-  center_leader:'',potential_center_leader:'',center_department_leader:'',potential_department_leader:'',volunteer:'',hq_staff:''
+  center_senior_leader:'',staff:'',center_leader:'',potential_center_leader:'',center_department_leader:'',potential_department_leader:'',volunteer:'',hq_staff:''
 };
 export const directors = ['country_director','international_director'];
 export const permissions = ['reports','review_reports','review_plans','comments','attendance','announcements','projects','documents','manage_users','v11:oversight','v11:approve','v11:publish','v11:teaching','v11:edit_manual','v11:upload_file'];
@@ -38,7 +38,8 @@ function canSeeLegacyItem(u,r,kind){
  return !r.center&&isNineHQDepartment(r.department)&&
    (r.userId===u.id||r.submission==='submitted'||['submitted','delayed','approved','locked'].includes(r.status));
 }
-export const managesAttendance = u => permit(u,'attendance') || ['admin_finance','monday_leader'].includes(u?.role);
+export const isMondayParticipant = u => !!u&&stateOf(u)==='active'&&(directors.includes(u.role)||(!u.center&&!['center_senior_leader','center_leader','potential_center_leader','center_department_leader','potential_department_leader','volunteer'].includes(u.role)&&(own(roleDepartments,u.role)||u.role==='staff')));
+export const managesAttendance = u => isMondayParticipant(u)&&(permit(u,'attendance') || ['admin_finance','monday_leader'].includes(u?.role));
 export const publishes = u => permit(u,'announcements') || ['admin_finance','monday_leader'].includes(u?.role);
 export const now = () => new Date().toISOString();
 export const version = r => Number(r?._v||0);
@@ -81,7 +82,8 @@ function profileData(data,previous={},complete=false){
   required(out.name,'required');
   if(complete){
     required(out.phone && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(out.email),'profileRequired');
-    if(['center_leader','potential_center_leader','center_department_leader','potential_department_leader','volunteer'].includes(out.role))required(out.center,'centerRequired');
+    if(['center_senior_leader','center_leader','potential_center_leader','center_department_leader','potential_department_leader','volunteer'].includes(out.role))required(out.center,'centerRequired');
+    if(['center_senior_leader','center_leader','center_department_leader'].includes(out.role))required(out.department,'departmentRequired');
   }
   return out;
 }
@@ -100,7 +102,7 @@ function keepOne(db,old,next){
 function timestampUser(data,passwordHash){
   const role=knownRole(data.role);
   return {id:crypto.randomUUID(),name:txt(data.name,240),username:userName(data.username),role,
-    department:roleDepartments[role]||(['center_leader','potential_center_leader','volunteer'].includes(role)?'':txt(data.department,160)),center:txt(data.center,160),passwordHash,createdAt:now(),adminPermissions:[],sessionVersion:0};
+    department:roleDepartments[role]||(['potential_center_leader','volunteer'].includes(role)?'':txt(data.department,160)),center:txt(data.center,160),passwordHash,createdAt:now(),adminPermissions:[],sessionVersion:0};
 }
 function register(db,data,verifier,bootstrapAuthorized){
   const base=timestampUser(data,verifier);uniqueName(db,base.username);consent(data);
@@ -229,17 +231,18 @@ function manageAccount(db,actor,action,data,secret,hashes){
     case 'account.remove': need(status!=='removed','conflict',409);Object.assign(next,{accountStatus:'removed',beforeRemoval:status,removedAt:now(),removedBy:actor.id,sessionVersion:(u.sessionVersion||0)+1});break;
     case 'account.restore': need(status==='removed','conflict',409);next.accountStatus=u.beforeRemoval==='pending'?'pending':'active';break;
     case 'account.access':
-      need(full(actor));need(status==='active','inactive');next.role=knownRole(data.role);
+      need(directors.includes(actor.role));need(status==='active','inactive');next.role=knownRole(data.role);
       if(directors.includes(next.role)&&u.role!==next.role){
         need(!db.all('users').some(x=>x.id!==u.id&&x.role===next.role&&stateOf(x)==='active'),'directorSlotTaken',409);
       }
       required(Array.isArray(data.permissions)&&data.permissions.every(p=>permissions.includes(p)),'roleInvalid');
       next.department=roleDepartments[next.role]||txt(data.department||u.department,160);
       next.center=txt(data.center??u.center,160);
+      if(['center_senior_leader','center_leader','center_department_leader'].includes(next.role))required(next.center&&next.department,'departmentRequired');
       next.adminPermissions=[...new Set(data.permissions)];next.fullAdmin=data.fullAdmin===true;
       break;
     case 'account.grant':
-      need(full(actor)&&u.id!==actor.id&&status==='active');next.fullAdmin=true;
+      need(directors.includes(actor.role)&&u.id!==actor.id&&status==='active');next.fullAdmin=true;
       next.adminGrantedBy=actor.id;next.adminGrantedAt=now();break;
     case 'account.reset':
       need(status==='active'&&u.id!==actor.id);next.passwordHash=secret;next.onboarding=true;next.sessionVersion=(u.sessionVersion||0)+1;break;
@@ -322,6 +325,7 @@ function editRecord(db,u,bucket,d){
   if(bucket==='attendance'){
     need(managesAttendance(u)); const {personId,date,status,note,programType}=strings(d,['personId','date','status','note','programType']);
     required(personKnown(db,personId)||old?.personId===personId,'required');
+    need(isMondayParticipant(db.one('users',personId)||seedPeople.find(p=>p.id===personId)),'mondayStaffOnly');
     required(/^\d{4}-\d\d-\d\d$/.test(date)&&['present','absent','permitted','late'].includes(status)&&['regular','special','event'].includes(programType));
     const same=db.all(bucket).findLast(r=>r.id!==old?.id && r.date===date && r.personId===personId && (r.programType||'regular')===programType);
     if(same && (!old || !(old.date===date && old.personId===personId && (old.programType||'regular')===programType)))throw new AppError('attendanceExists',409);
@@ -367,7 +371,7 @@ function visibleState(db,u){
     users:admin?all.filter(x=>full(u)||canManage(u,x)).map(privateUser):[],reports,plans,
     reviews:reviews.filter(r=>r.kind==='plan'?planIds.has(r.itemId):reportIds.has(r.itemId)),
     comments:reportAccess?db.all('comments').filter(c=>reportIds.has(c.reportId)&&(c.visible===true||directors.includes(u.role))):[],
-    attendance:db.all('attendance').filter(r=>managesAttendance(u)||r.personId===u.id),
+    attendance:isMondayParticipant(u)?db.all('attendance').filter(r=>managesAttendance(u)||r.personId===u.id):[],
     projects:db.all('projects').filter(r=>full(u)||r.createdBy===u.id),announcements:db.all('announcements'),
     documents:permit(u,'documents')?db.all('documents').filter(r=>full(u)||r.ownerId===u.id):[],
     audit:full(u)?db.all('audit').slice(-100).reverse():[],...v11State(db,u)};
