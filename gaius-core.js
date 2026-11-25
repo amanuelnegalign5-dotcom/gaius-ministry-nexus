@@ -341,9 +341,9 @@ function editRecord(db,u,bucket,d){
     values={personId,date,status,note,programType,recordedBy:u.id,personName:db.one('users',personId)?.name||seedPeople.find(p=>p.id===personId)?.name||old?.personName};
   }else{
     if(bucket==='announcements')need(publishes(u));
-    if(bucket==='projects')need(full(u)||(isHQReporter(u)&&permit(u,'projects')),'forbidden');
+    if(bucket==='projects')need(full(u)||permit(u,'projects'),'forbidden');
     if(bucket==='documents')need(permit(u,'documents'));
-    if(old)need(full(u)||permit(u,bucket));
+    if(old){need(full(u)||permit(u,bucket));if(['projects','documents'].includes(bucket))need(full(u)||old.createdBy===u.id||bucket==='documents'&&old.ownerId===u.id);}
     const title=txt(d.title,500);required(title,'titleRequired');
     if(bucket==='documents'){
       values={title,...strings(d,['type','expiry','fileName'],500),ownerId:old?.ownerId||u.id};
