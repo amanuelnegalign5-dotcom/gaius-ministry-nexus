@@ -13,6 +13,23 @@ const recordProjection=r=>{
  return {id:r.id,kind:r.kind,scopeType:r.scopeType,scopeId:r.scopeId,ownerId:r.ownerId,ownerName:r.ownerName,status:r.status,_v:r._v,createdAt:r.createdAt,updatedAt:r.updatedAt,data,actions:{...Object.fromEntries(Object.keys(TRANSITIONS).map(k=>[TRANSITIONS[k],r.actions?.[TRANSITIONS[k]]===true])),edit},...(r.kind==='directorGoals'&&r.sourceSnapshot?{sourceSnapshot:{budget:r.sourceSnapshot.budget}}:{})};
 };
 export const MAX_AGE=24*60*60*1000;
+export const SNAPSHOT_MAX_BYTES=20*1024*1024;
+const sameValue=(a,b)=>String(a??'')===String(b??'');
+// Only scalar field-level changes on the same authorized editable record may merge.
+// A changed attachment, scope, status or overlapping field always requires review.
+export function mergeOfflineEdit(draft,live){
+ const p=draft?.payload,base=draft?.base;if(!p?.id||p.intent||!base||!live?.actions?.edit||live.id!==p.id||live.kind!==p.kind||live._v===p.version||base._v!==p.version||live.scopeType!==p.scopeType||live.scopeId!==p.scopeId||live.status!==base.status||live.data?.fileId||live.data?.photoFileId||p.kind==='centerAttendance'||p.kind==='mondayAttendance')return null;
+ const out={...live.data},conflicts=[];
+ for(const k of new Set([...Object.keys(base.data||{}),...Object.keys(p.data||{})])){
+  if(!Object.hasOwn(p.data||{},k))continue;
+  const a=base.data?.[k],b=p.data[k],c=live.data?.[k];
+  if([a,b,c].some(v=>v!==null&&typeof v==='object'))return null;
+  if(sameValue(a,b))continue;
+  if(!sameValue(a,c)&&!sameValue(b,c)){conflicts.push(k);continue;}
+  out[k]=b;
+ }
+ return conflicts.length?{conflicts}:{payload:{...p,version:live._v,data:out}};
+}
 const encoder=new TextEncoder(), decoder=new TextDecoder();
 const bytes=n=>crypto.getRandomValues(new Uint8Array(n));
 export async function deriveKey(passphrase,salt){
@@ -22,7 +39,7 @@ export async function deriveKey(passphrase,salt){
 }
 export async function seal(key,value,aad){
  const iv=bytes(12),cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:encoder.encode(aad)},key,encoder.encode(JSON.stringify(value)));
- return {iv:Array.from(iv),cipher:Array.from(new Uint8Array(cipher))};
+ return {iv,cipher:new Uint8Array(cipher)};
 }
 export async function unseal(key,box,aad){
  const data=await crypto.subtle.decrypt({name:'AES-GCM',iv:new Uint8Array(box.iv),additionalData:encoder.encode(aad)},key,new Uint8Array(box.cipher));
@@ -94,11 +111,11 @@ export async function unlockVault(owner,passphrase,onlineState=null){
 export async function refreshVault(state){
  const v=unlocked;if(!v||v.owner!==state.me.id)return;
  const meta=await get('meta:'+v.owner),snapshot=offlineSnapshot(state,Date.now(),v.snapshot.extended===true);
- if(encoder.encode(JSON.stringify(snapshot)).length>5*1024*1024)throw Error('Offline snapshot exceeds 5 MB; use draft-only mode');
+ if(encoder.encode(JSON.stringify(snapshot)).length>SNAPSHOT_MAX_BYTES)throw Error('Offline snapshot exceeds 20 MB; keep draft-only mode or reduce stored records');
  const box=await seal(v.key,snapshot,'snapshot:'+v.owner);
  if(unlocked!==v)return;await put({...meta,box});if(unlocked===v){v.snapshot=snapshot;await enrollLogin(state);}
 }
-export async function setExtendedWorkspace(state,enabled){const v=unlocked;if(!v||v.owner!==state.me.id)throw Error('Unlock offline vault first');const snapshot=offlineSnapshot(state,Date.now(),enabled);if(encoder.encode(JSON.stringify(snapshot)).length>5*1024*1024)throw Error('Offline snapshot exceeds 5 MB; use draft-only mode');const meta=await get('meta:'+v.owner),box=await seal(v.key,snapshot,'snapshot:'+v.owner);if(unlocked!==v)throw Error('Session changed');await put({...meta,box});if(unlocked===v)v.snapshot=snapshot;}
+export async function setExtendedWorkspace(state,enabled){const v=unlocked;if(!v||v.owner!==state.me.id)throw Error('Unlock offline vault first');const snapshot=offlineSnapshot(state,Date.now(),enabled);if(encoder.encode(JSON.stringify(snapshot)).length>SNAPSHOT_MAX_BYTES)throw Error('Offline snapshot exceeds 20 MB; keep draft-only mode or reduce stored records');const meta=await get('meta:'+v.owner),box=await seal(v.key,snapshot,'snapshot:'+v.owner);if(unlocked!==v)throw Error('Session changed');await put({...meta,box});if(unlocked===v)v.snapshot=snapshot;}
 export function offlineState(owner){
  const v=unlocked;if(!v||v.owner!==owner||!snapshotValid(v.snapshot,owner))return null;
  const s=v.snapshot,operations=categoryValid(s,owner,'operations'),attendance=categoryValid(s,owner,'attendance');
@@ -116,9 +133,11 @@ export async function queueDraft(owner,payload,requestId=crypto.randomUUID()){
  const id='draft:'+owner+':'+requestId;
  const existing=await get(id);if(existing)return;
  if(payload.id&&(await listDrafts(owner)).some(d=>d.payload.id===payload.id))throw Error('A change for this record is already queued. Sync or discard it first.');
- const data={requestId,payload,createdAt:new Date().toISOString()};
+ const base=payload.id&&!payload.intent?v.snapshot.records?.find(r=>r.id===payload.id&&r.kind===payload.kind):null;
+ const data={requestId,payload,createdAt:new Date().toISOString(),...(base?{base:{_v:base._v,status:base.status,data:base.data}}:{})};
  const box=await seal(v.key,data,id);if(unlocked!==v)throw Error('Session changed');await put({id,owner,box});
 }
 export async function listDrafts(owner){const v=unlocked;if(!v||v.owner!==owner)return [];const rows=(await all()).filter(r=>r.owner===owner&&r.id.startsWith('draft:'));const result=[];for(const row of rows){result.push({...await unseal(v.key,row.box,row.id),id:row.id});}if(unlocked!==v)throw Error('Session changed');return result;}
-export async function markDraftError(owner,id,error){const v=unlocked;if(!v||v.owner!==owner)return;const row=await get(id);if(!row||row.owner!==owner)return;const data=await unseal(v.key,row.box,id);const box=await seal(v.key,{...data,error:String(error).slice(0,100)},id);if(unlocked===v)await put({...row,box});}
+export async function markDraftError(owner,id,error,conflicts=[]){const v=unlocked;if(!v||v.owner!==owner)return;const row=await get(id);if(!row||row.owner!==owner)return;const data=await unseal(v.key,row.box,id);const box=await seal(v.key,{...data,error:String(error).slice(0,100),conflicts:conflicts.map(k=>String(k).slice(0,100)).slice(0,100)},id);if(unlocked===v)await put({...row,box});}
+export async function replaceDraft(owner,id,payload){const v=unlocked;if(!v||v.owner!==owner||!draftAllowed(v.snapshot,payload))throw Error('Offline draft not permitted');const row=await get(id);if(!row||row.owner!==owner)throw Error('missing');const d=await unseal(v.key,row.box,id);if(d.payload.id||d.payload.intent||payload.id||d.payload.kind!==payload.kind)throw Error('Only unsynced new drafts can be edited');if(d.error==='offline')throw Error('Retry sync first: server receipt may already exist');const next={...d,payload,error:undefined,conflicts:[]};const box=await seal(v.key,next,id);if(unlocked!==v)throw Error('Session changed');await put({...row,box});}
 export async function deleteDraft(owner,id){if(!vaultUnlocked(owner)||!id.startsWith('draft:'+owner+':'))throw Error('forbidden');await drop(id);}
