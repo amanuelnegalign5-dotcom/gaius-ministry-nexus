@@ -9,7 +9,7 @@ const fail=(code,status=403)=>{const e=new Error(code);e.status=status;throw e;}
 const check=(condition,code='forbidden',status=403)=>{if(!condition)fail(code,status);};
 const at=()=>new Date().toISOString();
 const ver=r=>Number(r?._v||0);
-const homeScope=u=>['center_leader','potential_center_leader','center_department_leader','potential_department_leader','volunteer'].includes(u?.role)?'center': ['country_director','international_director'].includes(u?.role)?'personal':'hq';
+const homeScope=u=>['center_senior_leader','center_leader','potential_center_leader','center_department_leader','potential_department_leader','volunteer'].includes(u?.role)?'center': ['country_director','international_director'].includes(u?.role)?'personal':'hq';
 export const validScope=(s)=>['organization','hq','center','personal'].includes(s);
 function belongs(u,r){
  if(r.scopeType==='personal')return r.ownerId===u.id;
@@ -18,7 +18,7 @@ function belongs(u,r){
  return r.scopeType==='organization';
 }
 // Default-deny, unit-scoped policy. A permission flag does not erase the user's unit boundary.
-const CENTER_ROLES=new Set(['center_leader','center_department_leader']);
+const CENTER_ROLES=new Set(['center_senior_leader','center_leader','center_department_leader']);
 const unit=x=>String(x??'').trim().toLowerCase();
 const sameUnit=(a,b)=>!!unit(a)&&unit(a)===unit(b);
 const hqLeader=u=>isHQReporter(u);
@@ -47,7 +47,7 @@ function canRead(u,r){
  if(r.scopeType==='center'){
   if(!centerMember(u)||!sameUnit(u.center,r.scopeId))return false;
   if(r.ownerId===u.id)return true;
-  if(u.role==='center_leader')return sharedStatus(r);
+  if(['monthly','plans6'].includes(r.kind)||['center_senior_leader','center_leader'].includes(u.role))return sharedStatus(r);
   return centerDepartmentMatches(u,r)&&sharedStatus(r);
  }
  if(r.scopeType==='hq'){
@@ -69,7 +69,7 @@ function canCreate(u,k,scopeType,scopeId){
  if(isDirector(u))return true;
  if(V11_KINDS[k].fullOnly||k==='centers')return false;
  if(V11_KINDS[k].fullOrPermission&&!granted(u,V11_KINDS[k].fullOrPermission))return false;
- if(k==='followups'||k==='centerAttendance')return false;
+ if(k==='followups'||k==='centerAttendance')return u.role==='center_senior_leader'&&scopeType==='center'&&sameUnit(scopeId,u.center);
  if(scopeType==='center')return centerMember(u)&&sameUnit(scopeId,u.center)&&!V11_KINDS[k].fullOnly;
  if(scopeType==='hq')return hqLeader(u)&&sameUnit(scopeId,u.department)&&!V11_KINDS[k].centerOnly;
  if(scopeType==='organization')return granted(u,'v11:publish')&&['updates'].includes(k);
@@ -126,8 +126,9 @@ function save(db,u,p){
  }
  if(kind==='followups'){check(!db.all('v11_records').some(r=>r.id!==old?.id&&r.kind==='followups'&&r.scopeId===scopeId&&r.data?.week===data.week&&r.status!=='archived'),'duplicateWeeklyFollowup',409);}
  if(kind==='centerAttendance'){
+   check(['sunday','biweekly','special'].includes(data.eventType),'meetingTypeInvalid',400);
    const participant=db.one('users',data.participantId);
-   check(participant&&['center_leader','potential_center_leader'].includes(participant.role)&&participant.center===scopeId,'participantRoleInvalid',400);
+   check(participant&&['center_senior_leader','center_leader','center_department_leader','potential_center_leader','potential_department_leader'].includes(participant.role)&&participant.center===scopeId,'participantRoleInvalid',400);
    check(!db.all('v11_records').some(r=>r.id!==old?.id&&r.kind===kind&&r.scopeId===scopeId&&r.data.date===data.date&&r.data.eventType===data.eventType&&r.data.participantId===data.participantId&&r.status!=='archived'),'attendanceExists',409);
  }
  const record={id:old?.id||crypto.randomUUID(),kind,scopeType,scopeId,ownerId:old?.ownerId||u.id,ownerName:old?.ownerName||u.name,
