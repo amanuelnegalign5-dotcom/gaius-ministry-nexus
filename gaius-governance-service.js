@@ -67,7 +67,7 @@ export const GOVERNANCE_CATALOG={
     }
   ]
 };
-export function governanceService(db,u,action,p,now,idFactory,catalog){
+export function governanceService(db,u,action,p,now,idFactory,catalog,media=null){
  const fail=(msg,status=403)=>{throw Object.assign(new Error(msg),{status});};
  const check=(ok,msg='forbidden',status=403)=>{if(!ok)fail(msg,status);};
  const str=(v,n=200)=>typeof v==='string'?v.trim().slice(0,n):'';
@@ -115,17 +115,28 @@ export function governanceService(db,u,action,p,now,idFactory,catalog){
   check(director(u));const g=db.one('governance_grants',str(p.id));check(g,'missing',404);db.put('governance_grants',{...g,status:'revoked',revokedAt:new Date(now).toISOString(),revokedBy:u.id});audit(action,g.id);return {};
  }
  if(action==='governance.photo'){
-  const r=db.one('governance_records',str(p.id));check(r?.kind==='child'&&canPhoto(r),'forbidden');check(r.photoId,'missing',404);const ph=db.one('governance_photos',r.photoId);check(ph,'missing',404);audit(action,r.id);return {data:ph.data};
+  const r=db.one('governance_records',str(p.id));check(r?.kind==='child'&&canPhoto(r),'forbidden');check(r.photoId,'missing',404);const ph=db.one('governance_photos',r.photoId);check(ph,'missing',404);audit(action,r.id);return ph.storageKey?{storageKey:ph.storageKey}:{data:ph.data};
  }
  if(action==='governance.setPhoto'){
   const r=db.one('governance_records',str(p.id));check(r?.kind==='child'&&canWrite(r,'edit')&&canPhoto(r),'forbidden');
-  if(p.remove===true){if(r.photoId)db.drop('governance_photos',r.photoId);db.put('governance_records',{...r,photoId:null,version:r.version+1});audit(action,r.id);return {};}
+  const previous=r.photoId?db.one('governance_photos',r.photoId):null;
+  if(media?.expectedVersion!==undefined)check(media.expectedVersion===r.version,'conflict',409);
+  if(p.remove===true){
+    if(media?.prepare)return {version:r.version,previousKey:previous?.storageKey||null};
+    if(r.photoId)db.drop('governance_photos',r.photoId);
+    db.put('governance_records',{...r,photoId:null,version:r.version+1});audit(action,r.id);
+    return {previousKey:previous?.storageKey||null};
+  }
   check(p.consent===true&&p.ageConsentConfirmed===true,'photoConsentRequired',400);
   const v=typeof p.data==='string'?p.data:'';check(v.length<=420000&&/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(v),'photoInvalid',400);
   // Decode magic bytes; never accept SVG or executable formats.
   const [head,b64]=v.split(',');let raw;try{raw=atob(b64.slice(0,32));}catch{fail('photoInvalid',400);}
   check(head.includes('jpeg')?raw.charCodeAt(0)===255&&raw.charCodeAt(1)===216&&raw.charCodeAt(2)===255:head.includes('png')?raw.startsWith('\x89PNG\r\n\x1a\n'):raw.startsWith('RIFF')&&raw.slice(8,12)==='WEBP','photoInvalid',400);
-  const photoId=r.photoId||idFactory();db.put('governance_photos',{id:photoId,data:v,consentAt:new Date(now).toISOString(),by:u.id});db.put('governance_records',{...r,photoId,version:r.version+1});audit(action,r.id);return {};
+  if(media?.prepare)return {version:r.version,previousKey:previous?.storageKey||null};
+  const photoId=r.photoId||idFactory();
+  db.put('governance_photos',{id:photoId,...(media?.storageKey?{storageKey:media.storageKey}:{data:v}),consentAt:new Date(now).toISOString(),by:u.id});
+  db.put('governance_records',{...r,photoId,version:r.version+1});audit(action,r.id);
+  return {previousKey:previous?.storageKey||null};
  }
  if(action!=='governance.save')fail('unknown',404);
  const kind=str(p.kind);check(kinds.includes(kind),'kindInvalid',400);
