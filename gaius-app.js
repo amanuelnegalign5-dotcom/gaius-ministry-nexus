@@ -876,7 +876,7 @@ async function start(){
    // Offline reload opens only the safe v11 draft workspace, never the
    // server-governed v10 pages or confidential backend records.
    let marker=null;try{marker=JSON.parse(sessionStorage.getItem('gaius.v11.offlineIdentity')||localStorage.getItem('gaius.offline.device')||'null');}catch{}
-   if(marker?.me&&Date.now()>=marker.at&&Date.now()-marker.at<86400000){
+   if(marker?.me&&(localStorage.getItem('gaius.offline.device')||Date.now()>=marker.at&&Date.now()-marker.at<86400000)){
     $('app').dataset.mondayAccess='no';vis('auth',false);vis('app',true);
     setTimeout(()=>{const launcher=document.getElementById('v11launch');if(launcher)launcher.click();},50);
     return;

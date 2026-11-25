@@ -89,3 +89,21 @@ export function sameAttendanceWeek(a,b){
  const w1=centerAttendanceWeek(a.date),w2=centerAttendanceWeek(b.date);
  return !!w1&&!!w2&&w1.week===w2.week&&attendanceCategory(a.program)===attendanceCategory(b.program)&&a.participantId===b.participantId;
 }
+
+export const OFFLINE_POLICY_DEFAULTS=Object.freeze({country_director:7,international_director:7,hq:3,center:1,volunteer:1,operations:30,attendance:1});
+export const OFFLINE_POLICY_OPTIONS=[0,1,3,7,14,30];
+export function validOfflinePolicy(values){
+ return !!values&&Object.keys(OFFLINE_POLICY_DEFAULTS).every(k=>Number.isInteger(values[k])&&OFFLINE_POLICY_OPTIONS.includes(values[k])&&(k!=='attendance'||values[k]<=7));
+}
+export function offlineRole(u){
+ if(u?.role==='country_director'||u?.role==='international_director')return u.role;
+ if(u?.role==='volunteer')return 'volunteer';
+ const c=roleClass(u);return c==='center'?'center':c==='hq_leader'||c==='staff'?'hq':null;
+}
+export function offlineLease(u,policy,grants=[],at=Date.now()){
+ const role=offlineRole(u),active=!!role&&!u.onboarding&&(u.accountStatus||'active')==='active';
+ const limits=validOfflinePolicy(policy)?policy:OFFLINE_POLICY_DEFAULTS;
+ const expiry=Math.min(Infinity,...grants.filter(g=>g.endsAt).map(g=>Date.parse(g.endsAt)).filter(Number.isFinite));
+ const until=category=>Math.min(at+86400000*(active?Math.min(limits[role],limits[category]):0),expiry);
+ return {issuedAt:at,operationsUntil:until('operations'),attendanceUntil:until('attendance')};
+}
