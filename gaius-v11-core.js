@@ -274,7 +274,7 @@ export function v11State(db,u){
  const scopeId=scopeType==='center'?u.center:scopeType==='hq'?u.department:scopeType==='personal'?u.id:'org';
  const allowedKinds=isDirector(u)?V11_KINDS_LIST.filter(k=>!!V11_KINDS[k]):V11_KINDS_LIST.filter(k=>canCreate(u,k,scopeType,scopeId));
  return {v11:{records:db.all('v11_records').filter(r=>canRead(u,r,db)).map(r=>({...r,delegatedApproval:v11Grant(db,u,r,'approve')})),
-  capabilities:{director:isDirector(u),oversight:isDirector(u),canApprove:granted(u,'v11:approve'),canPublish:granted(u,'v11:publish'),canEditManual:granted(u,'v11:edit_manual'),allowedKinds,canUploadFile:scopeType!=='personal'||legacyPermission(u,'v11:upload_file'),defaultScopeType:scopeType,defaultScopeId:scopeId,hqReports:isDirectorRole(u)||hqLeader(u)},
+  capabilities:{director:isDirector(u),oversight:isDirector(u),canApprove:granted(u,'v11:approve'),canPublish:granted(u,'v11:publish'),canEditManual:granted(u,'v11:edit_manual'),allowedKinds,readableKinds:[...new Set([...allowedKinds,...(centerReader(u)?['centerAttendance','monthly','plans6']:[]),...db.all('v11_records').filter(r=>canRead(u,r,db)).map(r=>r.kind)])],canUploadFile:scopeType!=='personal'||legacyPermission(u,'v11:upload_file'),defaultScopeType:scopeType,defaultScopeId:scopeId,hqReports:isDirectorRole(u)||hqLeader(u)},
   files:db.all('v11_files').filter(f=>canReadFile(u,f)).map(f=>({id:f.id,name:f.name,type:f.type,size:f.size,scopeType:f.scopeType,scopeId:f.scopeId,ownerId:f.ownerId,status:f.status,createdAt:f.createdAt,...(isDirector(u)?{allowedUserIds:f.allowedUserIds||[]}:{} )}))}};
 }
 export function canReadFile(u,f){
