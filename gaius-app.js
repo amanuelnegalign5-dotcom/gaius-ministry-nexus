@@ -1,4 +1,5 @@
 import * as store from './gaius-store.js';
+import { CENTER_UNITS } from './gaius-v11-model.js';
 import { roleDepartments, directors, permissions, seedPeople, stateOf, full, permit, seesReports, writesReports, managesAttendance, isMondayParticipant, publishes, canManage, flow, version } from './gaius-core.js';
 
 const $=id=>document.getElementById(id);
@@ -224,7 +225,14 @@ function monday(date){const d=new Date(date+'T12:00:00Z');d.setUTCDate(d.getUTCD
 function dateTime(s){return s&&Number.isFinite(Date.parse(s))?new Intl.DateTimeFormat(lang==='am'?'am-ET-u-ca-gregory':'en-GB',{timeZone:'Africa/Addis_Ababa',dateStyle:'medium',timeStyle:'short'}).format(new Date(s)):'—';}
 const photo=p=>typeof p==='string'&&/^data:image\/(png|jpe?g|gif|webp|bmp|avif|heic|heif);base64,[A-Za-z0-9+/=]+$/i.test(p)?p:'./icons/icon-192.png';
 function fileData(file){return new Promise((resolve,reject)=>{if(!file)return resolve(null);if(file.size>2*1024*1024)return reject(Error('fileInvalid'));const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=()=>reject(Error('fileInvalid'));r.readAsDataURL(file);});}
-function assignment(select,depId){const selectedRole=val(select),dep=roleDepartments[selectedRole],isCenter=['center_senior_leader','center_leader','center_department_leader','potential_center_leader','potential_department_leader','volunteer'].includes(selectedRole);for(const opt of $(depId).options){const exclude=isCenter&&['Monday Staff Program','International','Prayer'].includes(opt.value);opt.hidden=exclude;opt.disabled=exclude;}if($(depId).selectedOptions[0]?.disabled)$(depId).selectedIndex=Array.from($(depId).options).findIndex(o=>!o.disabled);if(dep)set(depId,dep);$(depId).disabled=!!dep;}
+function assignment(select,depId){
+ const selectedRole=val(select),dep=roleDepartments[selectedRole],isCenter=['center_senior_leader','center_leader','center_department_leader','potential_center_leader','potential_department_leader','volunteer'].includes(selectedRole);
+ const prior=val(depId),list=isCenter?CENTER_UNITS.map(d=>[d.en,lang==='am'?d.am:d.en]):Object.keys(departments).map(d=>[d,dept(d)]);
+ $(depId).innerHTML=options([['','—'],...list],prior);
+ if(dep)set(depId,dep);
+ $(depId).disabled=!!dep;
+ const centerInput=$(select==='regRole'?'regCenter':'addCenter');if(centerInput)centerInput.required=isCenter;
+}
 function notification(key,isError=false){
  const k=key==='pending'?'pendingLogin':key==='removed'?'removedLogin':key;
  if($('app').classList.contains('hide')){$('authMsg').textContent=t(k);$('authMsg').classList.toggle('ok',!isError);return;}
@@ -291,7 +299,8 @@ function translate(){
  document.documentElement.lang=lang;localStorage.gLang=lang;set('langAuth',lang);set('langApp',lang);
  document.querySelectorAll('[data-i]').forEach(x=>x.textContent=t(x.dataset.i));document.querySelectorAll('[data-ph]').forEach(x=>x.placeholder=t(x.dataset.ph));
  for(const id of ['regRole','addRole'])for(const o of $(id).options)o.textContent=role(o.value);
- for(const id of ['regDept','reportDept','planDept','addDept'])for(const o of $(id).options){if(!o.hasAttribute('value'))o.value=o.textContent;o.textContent=dept(o.value);}
+ for(const id of ['reportDept','planDept'])for(const o of $(id).options){if(!o.hasAttribute('value'))o.value=o.textContent;o.textContent=dept(o.value);}
+ assignment('regRole','regDept');assignment('addRole','addDept');
  const checked=Array.from(document.querySelectorAll('.pcheck'),c=>c.checked);
  $('privacy').innerHTML=base.privacy.map((p,i)=>`<label class="privacyRow"><span>${p[0]}</span><span><input type="checkbox" class="pcheck" ${checked[i]?'checked':''}> ${h(p[lang==='am'?1:2])}</span></label>`).join('');
  $('logout').textContent=lang==='am'?'ውጣ':'Log out';$('loginTab').textContent=t(mode==='complete'?'cancel':'login');$('registerTab').textContent=t('register');authText();
@@ -354,7 +363,7 @@ on('logout',async()=>{try{await store.logout();}finally{signedOut();}await info(
 const centerRegistrationRoles=new Set(['center_senior_leader','center_leader','potential_center_leader','center_department_leader','potential_department_leader','volunteer']);
 function requiredCenterInput(){const isCenter=centerRegistrationRoles.has(val('regRole'));
  $('regCenter').required=isCenter;$('regCenterStar').textContent=isCenter?'*':'';
- if(['potential_center_leader','volunteer'].includes(val('regRole')))$('regDept').required=false;
+ if(['potential_center_leader','potential_department_leader','volunteer'].includes(val('regRole')))$('regDept').required=false;
  else $('regDept').required=true;
  if(directors.includes(val('regRole'))){$('regDept').required=false;set('regDept','');}
  $('regDeptStar').textContent=$('regDept').required?'*':'';
