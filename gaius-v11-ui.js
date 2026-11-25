@@ -31,12 +31,12 @@ async function load(reuse=false){
  if(localOwner&&!store.hasSession()){
   const local=vault.offlineState(localOwner);if(!local&&!vault.vaultUnlocked(localOwner))throw Error('offlineLoginExpired');
   state=local||{me:{id:localOwner},offlineOnly:true,v11:{records:[],files:[],capabilities:{}}};
-  if(!['records','offline','reference'].includes(section))section='offline';return state;
+  if(!state.extended&&!['records','offline','reference'].includes(section))section='offline';return state;
  }
  try{
   if(store.shared&&!navigator.onLine)throw Error('offline');
   state=await store.state({reuse});
-  if(!state.onboarding&&vault.vaultUnlocked(state.me.id)){try{await vault.refreshVault(state);localStorage.setItem('gaius.offline.device',JSON.stringify({at:Date.now(),me:{id:state.me.id}}));}catch{vault.lockVault();localStorage.removeItem('gaius.offline.device');}}
+  if(!state.onboarding&&vault.vaultUnlocked(state.me.id)){try{await vault.refreshVault(state);localStorage.setItem('gaius.offline.device',JSON.stringify({at:Date.now(),me:{id:state.me.id}}));}catch(e){vault.lockVault();localStorage.removeItem('gaius.offline.device');console.warn('Offline snapshot refresh failed:',e.message);}}
   if(state.onboarding)throw Error(text('መጀመሪያ መገለጫዎን ያጠናቅቁ','Complete your profile first'));
   // Only a minimal identity marker is cached; never cache organizational lists
   // or confidential backend records in offline session storage.
@@ -47,7 +47,7 @@ async function load(reuse=false){
   if(!store.hasSession()&&!localStorage.getItem('gaius.offline.device'))throw e;
   if(!cached?.me||!localStorage.getItem('gaius.offline.device')&&(Date.now()<cached.at||Date.now()-cached.at>86400000))throw Error(text('ያለ ኢንተርኔት መለያ ማረጋገጥ አልተቻለም','Offline identity expired; reconnect to verify'));
   state=vault.offlineState(cached.me.id)||{me:cached.me,directory:[],v11:{records:[],files:[],capabilities:{}},offlineOnly:true};
-  if(!['records','offline','reference'].includes(section))section='offline';
+  if(!state.extended&&!['records','offline','reference'].includes(section))section='offline';
  }
  return state;
 }
@@ -125,7 +125,7 @@ window.addEventListener('gaius:nexus-open-delegation',event=>{window.GAIUS_DELEG
 // A fast local or cached session can finish before this module registers its listener.
 if(window.GAIUS_ACTIVE_IDENTITY)queueMicrotask(()=>maybeAutoOpen(window.GAIUS_ACTIVE_IDENTITY||{}));
 window.addEventListener('gaius:nexus-session-cleared',()=>{
- close();root.replaceChildren();state=null;autoOpenedDirectorId=null;section='overview';
+ close();root.replaceChildren();state=null;autoOpenedDirectorId=null;section='overview';mondayEdit=null;
 });
 $('langApp')?.addEventListener('change',()=>{if(active)void render();});
 app.addEventListener('click',e=>{if(active&&(e.target.closest('button.nav')||e.target.closest('#logout')))close();},true);
@@ -161,7 +161,7 @@ function field(f,value=''){const [key,am,en,type,required]=f,label=escape(localL
  case 'centerunit':control=select([['','—'],...CENTER_UNITS.map(u=>[u.id,text(u.am,u.en)])]);break;
  case 'center':control=select([['','—'],...records().filter(r=>r.kind==='centers').map(r=>[r.data.name,r.data.name]),...(my().center?[[my().center,my().center]]:[])]);break;
  case 'user':control=`<select data-field="${key}" ${required?'required':''}>${userOptions(value)}</select>`;break;
- case 'registrycenter':control=select([['','—'],...records().filter(r=>r.kind==='centers'&&r.status!=='archived').map(r=>[r.id,r.data.name+' · '+(r.data.location||'')])]);break;
+ case 'registrycenter':control=select([['','—'],...records().filter(r=>r.kind==='centers'&&r.status!=='archived').map(r=>[r.id,r.data.name+' · '+(r.data.location||'')]),...(value&&!records().some(r=>r.kind==='centers'&&r.id===value)?[[value,text('ቀድሞ የተመደበ','Existing assignment')]]:[])]);break;
  case 'city':control=select([['','—'],['addis_ababa','Addis Ababa / አዲስ አበባ'],['bishoftu','Bishoftu / Debre Zeit'],['other','Other / ሌላ']]);break;
  case 'department':control=select([['','—'],...HQ_UNITS.map(u=>[u.id,text(u.am,u.en)])]);break;
  case 'advisorytype':control=select([['','—'],['individual',text('የወር የአንድ አማካሪ ግንኙነት','Monthly individual contact')],['formal',text('መደበኛ የቦርድ ሪፖርት ስብሰባ','Formal board reporting meeting')]]);break;
@@ -202,7 +202,7 @@ function reportFields(rec){
  // Center and general staff workspaces are intentionally separate from HQ
  // department reporting templates and cross-department dashboards.
  if(!caps().director&&mine()!=='hq')return V11_KINDS.monthly.fields
-   .filter(f=>f[0]!=='departmentType'&&!SPECIAL_FIELDS.has(f[0]))
+   .filter(f=>f[0]!=='departmentType'&&!SPECIAL_FIELDS.has(f[0])&&(!state.offlineOnly||f[0]!=='fileId'))
    .map(f=>field(f,rec?.data?.[f[0]]??'')).join('');
  const unit=rec?.data?.departmentType||HQ_UNITS.find(u=>u.en===my().department||u.id===my().department)?.id||'';
  const common=V11_KINDS.monthly.fields.filter(f=>!SPECIAL_FIELDS.has(f[0])&&(!state.offlineOnly||f[0]!=='fileId'));
@@ -388,7 +388,7 @@ async function update(reuse=false){const epoch=viewEpoch;await load(reuse);if(ep
 async function withBusy(fn){if(queueBusy)return;queueBusy=true;try{await fn();}catch(e){alertMsg(e.message,true);}finally{queueBusy=false;}}
 function serializedForm(){const form=$('v11form');if(!form.reportValidity())return null;
  const selected=$('v11AuthorizedScope');const target=selected&&!editing?caps().createScopes?.[kind]?.[Number(selected.value)]:null;
- const payload={kind,scopeType:target?.scopeType||$('v11Scope').value,scopeId:target?.scopeId||$('v11ScopeId').value.trim(),data:{}};
+ const payload={kind,scopeType:target?.scopeType||$('v11Scope').value,scopeId:target?.scopeId||$('v11ScopeId').value.trim(),data:state.offlineOnly&&editing?{...editing.data}:{}};
  for(const el of form.querySelectorAll('[data-field]'))payload.data[el.dataset.field]=el.value;
  if(editing){payload.id=editing.id;payload.version=editing._v;}
  return payload;
@@ -396,7 +396,7 @@ function serializedForm(){const form=$('v11form');if(!form.reportValidity())retu
 async function saveRecord(){
  const data=serializedForm();if(!data)return;
  const requestId=crypto.randomUUID(),owner=my().id;
- async function queue(){await vault.queueDraft(owner,data,requestId);if(!active||owner!==my().id)return;state=vault.offlineState(owner)||state;editing=null;section='offline';await render();alertMsg(text('በመሣሪያው በጥበቃ ተቀምጧል።','Encrypted draft saved on this device; not submitted.'));}
+ async function queue(){await vault.queueDraft(owner,data,requestId);if(!active||owner!==my().id)return;state=vault.offlineState(owner)||{me:{id:owner},offlineOnly:true,v11:{records:[],files:[],capabilities:{}}};editing=null;section='offline';await render();alertMsg(text('በመሣሪያው በጥበቃ ተቀምጧል።','Encrypted draft saved on this device; not submitted.'));}
  if(store.shared&&(state.offlineOnly||!navigator.onLine)){await queue();return;}
  try{await store.command('v11.save',data,requestId);editing=null;await update();alertMsg(text('ረቂቅ ተቀምጧል','Draft saved'));}
  catch(e){if(e.message==='offline'&&store.shared){await queue();return;}throw e;}
@@ -507,7 +507,7 @@ root.addEventListener('click',e=>{const b=e.target.closest('[data-v]');if(!b)ret
  if(op==='showCenter'){selectedCenter=b.dataset.center;section='analytics';render();return;}
  if(op==='openKind'){if(state.offlineOnly&&!myAvailableKinds().includes(b.dataset.kind)&&!state.onlineKinds?.includes(b.dataset.kind))throw Error(text('ይህ ክፍል Online ይፈልጋል','This module requires online access'));kind=b.dataset.kind;editing=null;section='records';await render();return;}
  if(op==='completeVisit'){if(state.offlineOnly)throw Error('offline');const item=records().find(r=>r.id===id);if(!item)throw Error('missing');if(!item.data.actualDate||!item.data.observations)throw Error(text('መጀመሪያ የተጎበኘበትን ቀንና የታዩትን ነገሮች በEdit ሙላ','Edit visit to enter actual date and observations first'));await store.command('v11.completeVisit',{id,version:item._v,actualDate:item.data.actualDate,observations:item.data.observations});await update();return;}
- if(op==='section'){if(!availableSections().includes(b.dataset.section))return;section=b.dataset.section;editing=null;if(state.offlineOnly&&!store.hasSession()){await render();return;}await update(true);return;}
+ if(op==='section'){if(!availableSections().includes(b.dataset.section))return;section=b.dataset.section;editing=null;if(state.offlineOnly){await render();return;}await update(true);return;}
  if(op==='cancel'){editing=null;render();return;}
  if(op==='edit'){const obj=records().find(r=>r.id===id);if(!obj)throw Error('missing');if(!obj.actions?.edit)throw Error('forbidden');kind=obj.kind;editing=obj;section='records';render();root.querySelector('#v11form')?.scrollIntoView({block:'start'});return;}
  if(op==='transition'){await transition(id,b.dataset.decision);return;}
@@ -516,7 +516,7 @@ root.addEventListener('click',e=>{const b=e.target.closest('[data-v]');if(!b)ret
  if(op==='offlineSignIn'){document.getElementById('logout').click();return;}
  if(op==='sync'){await sync();return;}
  if(op==='syncLegacy'){await syncLegacy();return;}
- if(op==='lockOffline'){if(sessionStorage.getItem('gaius.offline.localSession')){$('logout').click();return;}vault.lockVault();if(state.offlineOnly){state={me:{id:my().id},offlineOnly:true,v11:{records:[],files:[],capabilities:{}}};}await render();return;}
+ if(op==='lockOffline'){mondayEdit=null;if(sessionStorage.getItem('gaius.offline.localSession')){$('logout').click();return;}vault.lockVault();if(state.offlineOnly){state={me:{id:my().id},offlineOnly:true,v11:{records:[],files:[],capabilities:{}}};}await render();return;}
  if(op==='dropEncrypted'){if(confirm(text('ረቂቁን ልሰርዝ?','Discard this unsynced draft?'))){await vault.deleteDraft(my().id,id);await render();}return;}
  if(op==='dropDraft'){if(confirm(text('ያልተላከ ረቂቅ ልሰርዝ?','Delete the unsynced local draft?'))){await draftDelete(id);await render();}return;}
  if(op==='fileReview'){if(b.dataset.decision==='removed'&&!confirm(text('ፋይሉ ከR2 ማከማቻ ይሰረዛል። ለመቀጠል እርግጠኛ ነህ?','The file will be deleted from storage. Continue?')))return;await store.command('v11.fileReview',{id,decision:b.dataset.decision});await update();alertMsg('Updated');return;}
