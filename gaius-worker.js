@@ -2,6 +2,7 @@
 import { AppError, digest, handle, authenticatedUser } from './gaius-core.js';
 import {canReadFile,canUploadFile} from './gaius-v11-core.js';
 import {governanceService,GOVERNANCE_CATALOG} from './gaius-governance-service.js';
+import {privatePhotoCommand} from './gaius-private-media.js';
 import { RecoveryService, recoveryReady } from './gaius-recovery.js';
 
 class SqlRecords {
@@ -115,8 +116,12 @@ export class MinistryWorkspace {
         const {user}=await authenticatedUser(this.db,token);
         const payload=data.payload||{};
         if(typeof payload!=='object'||Array.isArray(payload))throw new AppError('unknown',400);
-        const result=this.db.atomic(()=>{const fresh=this.db.one('users',user.id);if(!fresh||(fresh.sessionVersion||0)!==(user.sessionVersion||0))throw new AppError('expired',401);return governanceService(this.db,fresh,data.action,payload,Date.now(),()=>crypto.randomUUID(),GOVERNANCE_CATALOG);});
-        return json(result);
+        const run=(media=null)=>this.db.atomic(()=>{const fresh=this.db.one('users',user.id);if(!fresh||(fresh.sessionVersion||0)!==(user.sessionVersion||0))throw new AppError('expired',401);return governanceService(this.db,fresh,data.action,payload,Date.now(),()=>crypto.randomUUID(),GOVERNANCE_CATALOG,media);});
+        if(['governance.photo','governance.setPhoto'].includes(data.action)){
+          const result=await privatePhotoCommand({action:data.action,payload,bucket:this.env.MEDIA_BUCKET,run,revalidate:async()=>{await authenticatedUser(this.db,token);},idFactory:()=>crypto.randomUUID()});
+          return json(result);
+        }
+        return json(run());
       }
       if(route==='state'){
         const snapshot=await handle(this.db,route,data,{token,bootstrapAuthorized});
