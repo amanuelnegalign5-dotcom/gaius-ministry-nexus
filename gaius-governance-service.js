@@ -91,15 +91,15 @@ export function governanceService(db,u,action,p,now,idFactory,catalog){
  const stamp=v=>typeof v==='string'&&/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/.test(v)&&Number.isFinite(Date.parse(v));
  const grant=(module,op,r)=>hq(u)&&db.all('governance_grants').some(g=>g.recipientId===u.id&&g.status==='active'&&director(db.one('users',g.issuerId))&&g.modules.includes(module)&&g.actions.includes(op)&&(!g.startsAt||Date.parse(g.startsAt)<=now)&&(!g.endsAt||now<Date.parse(g.endsAt))&&(g.scope==='organization'||g.scope===r.region||g.scope===r.centerId||g.scope===r.id));
  const belongs=r=>{const c=resolveCenter(u);return !!c&&(r.centerId===c.id||r.kind==='center'&&r.id===c.id);};
- const canView=r=>director(u)||grant(kindMap[r.kind],'view',r)||(centerRole(u)&&belongs(r)&&(['center','progress','attendance'].includes(r.kind)||r.kind==='child'&&(senior(u)||r.mentorId===u.id)||r.kind==='mentee'&&(senior(u)||r.mentorId===u.id)));
- const canWrite=(r,op)=>director(u)&&region(u)===r.region||grant(kindMap[r.kind],op,r)||(centerRole(u)&&belongs(r)&&(r.kind==='child'&&senior(u)||r.kind==='mentee'&&leaders.includes(u.role)&&r.mentorId===u.id||r.kind==='progress'&&leaders.includes(u.role)&&r.ownerId===u.id||r.kind==='attendance'&&senior(u)));
- const canPhoto=r=>director(u)||centerRole(u)&&belongs(r)&&(senior(u)||r.mentorId===u.id)||grant('member_registry','view',r);
+ const canView=r=>director(u)||grant(kindMap[r.kind],'view',r)||(centerRole(u)&&belongs(r)&&((['center','progress'].includes(r.kind)||r.kind==='attendance'&&(senior(u)||r.participantId===u.id))||r.kind==='child'&&(senior(u)||r.mentorId===u.id)||r.kind==='mentee'&&(senior(u)||r.mentorId===u.id)));
+ const canWrite=(r,op)=>director(u)&&region(u)===r.region||grant(kindMap[r.kind],op,r)||(centerRole(u)&&belongs(r)&&(r.kind==='child'&&senior(u)||r.kind==='mentee'&&senior(u)||r.kind==='progress'&&leaders.includes(u.role)&&r.ownerId===u.id||r.kind==='attendance'&&senior(u)));
+ const canPhoto=r=>director(u)||centerRole(u)&&belongs(r)&&(senior(u)||r.mentorId===u.id);
  const audit=(event,target)=>db.put('audit',{id:idFactory(),actorId:u.id,action:event,target,at:new Date(now).toISOString()});
  const safeRecord=r=>{const {photoId,...rest}=r;return {...rest,hasPhoto:!!photoId};};
  check(live(u));
  if(action==='governance.list'){
   const records=all().filter(canView).map(safeRecord);
-  return {records,grants:db.all('governance_grants').filter(g=>director(u)||g.recipientId===u.id),catalog:director(u)?catalog:null,capabilities:{director:director(u),region:region(u),senior:senior(u),centerId:resolveCenter(u)?.id||'',centerRole:centerRole(u),hq:hq(u)},eligibleHQ:director(u)?db.all('users').filter(hq).map(x=>({id:x.id,name:x.name,role:x.role})):[],mentors:db.all('users').filter(x=>live(x)&&leaders.includes(x.role)&&(director(u)||resolveCenter(x)?.id===resolveCenter(u)?.id&&!!resolveCenter(u))).map(x=>({id:x.id,name:x.name,centerId:resolveCenter(x)?.id||''}))};
+  return {records,grants:db.all('governance_grants').filter(g=>director(u)||g.recipientId===u.id),catalog:director(u)?catalog:null,capabilities:{director:director(u),region:region(u),senior:senior(u),centerId:resolveCenter(u)?.id||'',centerRole:centerRole(u),hq:hq(u),canManageChildren:senior(u)||director(u),canMentor:leaders.includes(u.role)},participants:db.all('users').filter(x=>live(x)&&[...leaders,...potential].includes(x.role)&&(director(u)||!!resolveCenter(u)&&resolveCenter(x)?.id===resolveCenter(u)?.id)).map(x=>({id:x.id,name:x.name,centerId:resolveCenter(x)?.id||''})),eligibleHQ:director(u)?db.all('users').filter(hq).map(x=>({id:x.id,name:x.name,role:x.role})):[],mentors:db.all('users').filter(x=>live(x)&&leaders.includes(x.role)&&(director(u)||resolveCenter(x)?.id===resolveCenter(u)?.id&&!!resolveCenter(u))).map(x=>({id:x.id,name:x.name,centerId:resolveCenter(x)?.id||''}))};
  }
  if(action==='governance.grant'){
   check(director(u));const recipient=db.one('users',str(p.recipientId));check(hq(recipient),'recipientInvalid',400);
@@ -157,7 +157,7 @@ export function governanceService(db,u,action,p,now,idFactory,catalog){
   check(child?.kind==='child'&&child.centerId===centerId&&live(m)&&leaders.includes(m.role)&&resolveCenter(m)?.id===centerId,'mentorInvalid',400);
   check(['active','completed','transferred','inactive'].includes(row.status),'statusInvalid',400);
   check(!all().some(x=>x.kind==='mentee'&&x.id!==row.id&&x.childId===row.childId&&x.status==='active'&&row.status==='active'),'duplicateMentee',409);
-  row.name=child.name;row.goal=str(p.goal,2000);row.challenges=str(p.challenges,2000);row.nextAction=str(p.nextAction,2000);
+  row.name=child.name;check(child.mentorId===row.mentorId,'mentorAssignmentRequired',400);row.goal=str(p.goal,2000);row.challenges=str(p.challenges,2000);row.nextAction=str(p.nextAction,2000);
  }else if(kind==='attendance'){
   row.participantId=str(p.participantId);row.date=str(p.date);row.program=str(p.program);
   const participant=db.one('users',row.participantId);
@@ -166,10 +166,10 @@ export function governanceService(db,u,action,p,now,idFactory,catalog){
   check(!all().some(x=>x.kind==='attendance'&&x.id!==row.id&&x.centerId===centerId&&x.participantId===row.participantId&&x.date===row.date&&x.program===row.program),'attendanceExists',409);
   row.name=participant.name;
  }else{
-  row.purpose=str(p.purpose,4000);row.lead=str(p.lead);row.start=str(p.start);row.end=str(p.end);row.challenges=str(p.challenges,4000);row.nextAction=str(p.nextAction,4000);row.outcome=str(p.outcome,4000);row.department=str(p.department);row.planId=str(p.planId);row.meetingType=str(p.meetingType);row.frequency=str(p.frequency);row.budget=str(p.budget,80);
+  row.purpose=str(p.purpose,4000);row.lead=str(p.lead);row.start=str(p.start);row.end=str(p.end);row.challenges=str(p.challenges,4000);row.nextAction=str(p.nextAction,4000);row.outcome=str(p.outcome,4000);row.department=str(p.department);row.planId=str(p.planId);row.meetingType=str(p.meetingType);row.frequency=str(p.frequency);row.budget=str(p.budget,80);row.members=str(p.members,4000);row.deliverables=str(p.deliverables,4000);row.quantitative=str(p.quantitative,2000);row.qualitative=str(p.qualitative,4000);
   check(['planned','active','completed','paused','archived','draft','submitted','approved'].includes(row.status),'statusInvalid',400);
   check(!row.start||date(row.start),'dateInvalid',400);check(!row.end||date(row.end)&&(!row.start||row.end>=row.start),'dateInvalid',400);
-  if(kind==='progress')check(row.planId&&row.department&&row.outcome&&row.challenges&&row.nextAction,'progressDetailsRequired',400);
+  if(kind==='progress'){check(row.planId&&row.department&&row.outcome&&row.challenges&&row.nextAction,'progressDetailsRequired',400);if(!director(u)&&!grant('department_plan_tracking','approve',row))check(!['approved','archived'].includes(row.status),'approvalRequiresAuthority');if(centerRole(u))check(row.department===u.department,'departmentScopeMismatch');}
  }
  db.put('governance_records',row);audit(action,row.id);return {id:row.id};
 }
