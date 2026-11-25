@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {privatePhotoCommand} from '../gaius-private-media.js';
 import {v11Grant} from '../gaius-grant-bridge.js';
-import {v11State,v11Command} from '../gaius-v11-core.js';
+import {v11State,v11Command,canUploadFile,canReadFile} from '../gaius-v11-core.js';
 import {isMondayParticipant} from '../gaius-core.js';
 import {readFileSync} from 'node:fs';
 
@@ -88,4 +88,47 @@ test('deployment configuration, Pages package and cache include required private
  const sw=readFileSync(new URL('../sw.js',import.meta.url),'utf8');
  assert.match(pages,/gaius-grant-bridge\.js/);assert.match(sw,/gaius-grant-bridge\.js/);
  assert.doesNotMatch(sw,/gaius-private-media\.js/);
+});
+
+test('scoped grant creates the same UI capability and backend authority, then revocation removes both',()=>{
+ const {h,db,g}=fixture();
+ db.put('governance_grants',{...g,modules:['center_reports'],actions:['view','create','edit']});
+ const state=()=>v11State(db,h).v11;
+ assert.ok(state().capabilities.createScopes.monthly.some(x=>x.scopeType==='center'&&x.scopeId==='east'));
+ assert.ok(!state().capabilities.createScopes.monthly.some(x=>x.scopeId==='west'));
+ const data={title:'Synthetic report',month:'2026-11',activity:'Training',result:'Completed'};
+ const save=(scopeId)=>v11Command(db,h,'v11.save',{kind:'monthly',scopeType:'center',scopeId,data});
+ assert.throws(()=>save('West'),/forbidden/);
+ const id=save('East').id;const record=state().records.find(x=>x.id===id);
+ assert.ok(record?.actions.edit);assert.ok(record.actions.submit);assert.equal(record.actions.approve,false);
+ v11Command(db,h,'v11.save',{kind:'monthly',id,version:record._v,data:{...data,title:'Revised'}});
+ db.put('governance_grants',{...g,status:'revoked'});
+ assert.ok(!state().capabilities.createScopes.monthly.some(x=>x.scopeId==='east'));
+ assert.ok(!state().records.some(x=>x.id===id));
+ assert.throws(()=>save('East'),/forbidden/);
+});
+test('create-only and edit-only grants do not silently authorize other actions',()=>{
+ const {h,db,g}=fixture();
+ db.put('governance_grants',{...g,modules:['center_reports'],actions:['create']});
+ const data={title:'Synthetic',month:'2026-11',activity:'Training',result:'Done'};
+ const id=v11Command(db,h,'v11.save',{kind:'monthly',scopeType:'center',scopeId:'East',data}).id;
+ const r=v11State(db,h).v11.records.find(x=>x.id===id);
+ assert.equal(r.actions.edit,false);
+ assert.throws(()=>v11Command(db,h,'v11.save',{kind:'monthly',id,version:r._v,data}),/forbidden/);
+ db.put('governance_grants',{...g,modules:['center_reports'],actions:['edit']});
+ assert.equal(v11State(db,h).v11.records.find(x=>x.id===id).actions.edit,true);
+ assert.throws(()=>v11Command(db,h,'v11.save',{kind:'monthly',scopeType:'center',scopeId:'East',data}),/forbidden/);
+});
+test('document grant scope governs upload and file retrieval; personal and other centers stay protected',()=>{
+ const {h,db,g}=fixture();db.put('governance_grants',{...g,modules:['documents'],actions:['view','create']});
+ assert.equal(canUploadFile(h,'center','East',db),true);
+ assert.equal(canUploadFile(h,'center','West',db),false);
+ const f={id:'file',kind:'documents',scopeType:'center',scopeId:'East',ownerId:'other',status:'approved'};
+ assert.equal(canReadFile(h,f,db),true);
+ assert.equal(canReadFile(h,{...f,status:'pending'},db),false);
+ assert.equal(canReadFile(h,{...f,scopeId:'West'},db),false);
+ assert.equal(canReadFile(h,{...f,scopeType:'personal'},db),false);
+ db.put('governance_grants',{...g,status:'revoked'});
+ assert.equal(canReadFile(h,f,db),false);
+ assert.equal(canUploadFile(h,'center','East',db),false);
 });
