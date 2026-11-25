@@ -62,7 +62,8 @@ async function enrollLogin(state){
  const v=unlocked;if(!v||v.owner!==state.me.id||!state.me.username)return;
  const tag=await loginTag(state.me.username),id='login:'+tag;
  if(unlocked!==v)return;
- await put({id,owner:v.owner,failures:0,retryAt:0});
+ for(const row of await all())if(row.id.startsWith('login:')&&row.owner===v.owner&&row.id!==id)await drop(row.id);
+ if(unlocked===v)await put({id,owner:v.owner,failures:0,retryAt:0});
 }
 export async function unlockVault(owner,passphrase,onlineState=null){
  const mark=++epoch;unlocked=null;
