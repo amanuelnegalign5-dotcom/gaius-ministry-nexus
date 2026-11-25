@@ -348,6 +348,7 @@ function analyticsScreen(){
  ${selectedCenter?`<div class="v11box"><h2>${text('የተመረጠ ማዕከል','Selected center')}: ${escape(selectedCenter)}</h2>${all.filter(r=>r.scopeType==='center'&&r.scopeId===selectedCenter&&['monthly','followups'].includes(r.kind)&&r.status==='approved').map(card).join('')||'<p>No Data</p>'}</div>`:''}`);
 }
 async function render(){if(!active)return;
+ root.dataset.connection=state.offlineOnly?'offline':'online';
  if(state.offlineOnly){state=vault.offlineState(my().id)||{me:{id:my().id},offlineOnly:true,v11:{records:[],files:[],capabilities:{}}};}
  const appNow=localLang();launch.textContent='✦ '+(isCenterAccount(my())?text('የማዕከል ሥራ','Center workspace'):(appNow==='am'?'ጋይዮስ ኔክሰስ':'Gaius Nexus'));
  window.dispatchEvent(new Event('gaius:nexus-governance-close'));
