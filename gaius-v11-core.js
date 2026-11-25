@@ -23,6 +23,7 @@ function belongs(u,r){
 const CENTER_ROLES=new Set(['center_senior_leader','center_leader','center_department_leader']);
 const unit=x=>String(x??'').trim().toLowerCase();
 const sameUnit=(a,b)=>!!unit(a)&&unit(a)===unit(b);
+const sameCenter=(u,key,ctx)=>sameUnit(u?.center,key)||!!ctx?.resolve(u?.center)&&ctx.resolve(u.center).id===ctx.resolve(key)?.id;
 const hqLeader=u=>isHQReporter(u);
 const centerMember=u=>CENTER_ROLES.has(u?.role)&&!!u.center;
 const centerReader=u=>!!u?.center&&(centerMember(u)||['potential_center_leader','potential_department_leader'].includes(u.role));
@@ -30,6 +31,7 @@ const centerDepartmentMatches=(u,r)=>sameUnit(u.department,r.data?.departmentTyp
 const sharedStatus=r=>['approved','submitted'].includes(r.status);
 function canRead(u,r,db,ctx=null){
  if(!active(u))return false;
+ if(db&&!ctx)ctx=grantContext(db,u);
  if(isCenterAccount(u)&&r.scopeType==='hq')return false;
  if(r.scopeType==='personal')return r.ownerId===u.id;
  if(db){const g=ctx||grantContext(db,u);if(g.record(r,'view')||g.record(r,'approve')||g.record(r,'edit')||r.ownerId===u.id&&g.record(r,'create'))return true;}
@@ -43,14 +45,14 @@ function canRead(u,r,db,ctx=null){
  if(isDirector(u))return true;
  // Publicly approved updates can be viewed by leaders, not unrelated staff.
  if(r.scopeType==='organization'){
-  if(r.kind==='centers')return centerMember(u)&&sameUnit(u.center,r.data?.name)&&r.status==='approved';
+  if(r.kind==='centers')return centerMember(u)&&sameCenter(u,r.data?.name,ctx)&&r.status==='approved';
   return r.kind==='updates'&&r.status==='approved'&&(hqLeader(u)||centerMember(u));
  }
  if(r.kind==='board'||r.kind==='advisoryMeetings'||r.kind==='visits'||r.kind==='directorGoals')return false;
  if(r.kind==='manuals')return granted(u,'v11:edit_manual')&&belongs(u,r);
  if(r.kind==='succession'&&r.ownerId!==u.id&&r.data?.leaderId!==u.id)return false;
  if(r.scopeType==='center'){
-  if(!centerReader(u)||!sameUnit(u.center,r.scopeId))return false;
+  if(!centerReader(u)||!sameCenter(u,r.scopeId,ctx))return false;
   if(r.kind==='centerAttendance')return centerRosterManager(u)||r.data?.participantId===u.id;
   if(!centerMember(u))return ['monthly','plans6'].includes(r.kind)&&(r.ownerId===u.id||sharedStatus(r));
   if(r.ownerId===u.id)return true;
@@ -63,7 +65,7 @@ function canRead(u,r,db,ctx=null){
  }
  return false;
 }
-function canCreate(u,k,scopeType,scopeId,ctx=null){
+function canCreate(u,k,scopeType,scopeId,ctx=null,allowGrant=true){
  if(!active(u)||!V11_KINDS[k])return false;
  if(V11_KINDS[k].personalOnly)return isDirector(u)&&scopeType==='personal'&&scopeId===u.id;
  if(scopeType==='personal'){
@@ -72,18 +74,18 @@ function canCreate(u,k,scopeType,scopeId,ctx=null){
   // who are not assigned a center-leadership role. No HQ report access.
   return scopeId===u.id&&['monthly','plans6'].includes(k);
  }
- if(isCenterAccount(u)&&(scopeType!=='center'||!sameUnit(u.center,scopeId)&&ctx?.resolve(u.center)?.id!==ctx?.resolve(scopeId)?.id))return false;
+ if(isCenterAccount(u)&&(scopeType!=='center'||!sameCenter(u,scopeId,ctx)))return false;
  if(V11_KINDS[k].centerOnly&&scopeType!=='center')return false;
  if(scopeType==='hq'&&['monthly','plans6'].includes(k)&&!isNineHQDepartment(scopeId))return false;
- if(ctx&&ctx.record({kind:k,scopeType,scopeId,status:'draft'},'create'))return true;
+ if(allowGrant&&ctx&&ctx.record({kind:k,scopeType,scopeId,status:'draft'},'create'))return true;
  if(scopeType==='hq'&&['monthly','plans6'].includes(k)&&!isDirectorRole(u)&&!hqLeader(u))return false;
  if(isDirector(u))return true;
  if(V11_KINDS[k].fullOnly||k==='centers')return false;
  if(V11_KINDS[k].fullOrPermission&&!granted(u,V11_KINDS[k].fullOrPermission))return false;
- if(k==='centerAttendance')return centerRosterManager(u)&&scopeType==='center'&&sameUnit(scopeId,u.center);
- if(k==='followups')return u.role==='center_senior_leader'&&scopeType==='center'&&sameUnit(scopeId,u.center);
- if(scopeType==='center'&&centerReader(u)&&sameUnit(scopeId,u.center)&&!centerMember(u))return k==='monthly'&&centerPermission(u,'center:submit_reports')||k==='plans6'&&centerPermission(u,'center:submit_plans');
- if(scopeType==='center')return centerMember(u)&&sameUnit(scopeId,u.center)&&!V11_KINDS[k].fullOnly;
+ if(k==='centerAttendance')return centerRosterManager(u)&&scopeType==='center'&&sameCenter(u,scopeId,ctx);
+ if(k==='followups')return u.role==='center_senior_leader'&&scopeType==='center'&&sameCenter(u,scopeId,ctx);
+ if(scopeType==='center'&&centerReader(u)&&sameCenter(u,scopeId,ctx)&&!centerMember(u))return k==='monthly'&&centerPermission(u,'center:submit_reports')||k==='plans6'&&centerPermission(u,'center:submit_plans');
+ if(scopeType==='center')return centerMember(u)&&sameCenter(u,scopeId,ctx)&&!V11_KINDS[k].fullOnly;
  if(scopeType==='hq')return hqLeader(u)&&sameUnit(scopeId,u.department)&&!V11_KINDS[k].centerOnly;
  if(scopeType==='organization')return granted(u,'v11:publish')&&['updates'].includes(k);
  return false;
@@ -92,11 +94,11 @@ function canEditRecord(db,u,r,ctx=grantContext(db,u)){
  if(!['draft','revision_requested'].includes(r.status)||!canRead(u,r,db,ctx))return false;
  if(r.scopeType==='personal')return r.ownerId===u.id&&canCreate(u,r.kind,r.scopeType,r.scopeId,ctx);
  if(ctx.record(r,'edit'))return true;
- return canCreate(u,r.kind,r.scopeType,r.scopeId)&&(isDirector(u)||r.ownerId===u.id||r.kind==='centerAttendance'&&r.scopeType==='center'&&sameUnit(r.scopeId,u.center)&&centerRosterManager(u));
+ return canCreate(u,r.kind,r.scopeType,r.scopeId,ctx,false)&&(isDirector(u)||r.ownerId===u.id||r.kind==='centerAttendance'&&r.scopeType==='center'&&sameCenter(u,r.scopeId,ctx)&&centerRosterManager(u));
 }
 function recordActions(db,u,r,ctx){
  const owner=r.ownerId===u.id, personal=r.scopeType==='personal', director=isDirector(u), dedicated=['visits','directorGoals'].includes(r.kind), review=!personal&&r.status==='submitted'&&(director||!owner&&(granted(u,'v11:approve')||ctx.record(r,'approve')));
- return {edit:canEditRecord(db,u,r,ctx),submit:!dedicated&&(owner||director&&!personal)&&['draft','revision_requested'].includes(r.status),approve:!dedicated&&review,requestChanges:!dedicated&&(review||centerCanReview(u,r)),revise:!dedicated&&r.status==='approved'&&(owner||director&&!personal),archive:(owner||director&&!personal)&&['draft','approved','rejected','revision_requested'].includes(r.status)};
+ return {edit:canEditRecord(db,u,r,ctx),submit:!dedicated&&(owner||director&&!personal)&&['draft','revision_requested'].includes(r.status),approve:!dedicated&&review,requestChanges:!dedicated&&(review||centerCanReview(u,sameCenter(u,r.scopeId,ctx)&&r.scopeType==='center'?{...r,scopeId:u.center}:r)),revise:!dedicated&&r.status==='approved'&&(owner||director&&!personal),archive:(owner||director&&!personal)&&['draft','approved','rejected','revision_requested'].includes(r.status)};
 }
 function validate(k,input){
  const out={},schema=V11_KINDS[k];check(schema,'invalidKind',400);
@@ -302,7 +304,8 @@ export function v11State(db,u){
 }
 export function canReadFile(u,f,db=null,ctx=null){
  if(!active(u)||f.status==='removed')return false;
- if(isCenterAccount(u)&&(f.scopeType==='hq'||f.scopeType==='center'&&!sameUnit(u.center,f.scopeId)))return false;
+ if(db&&!ctx)ctx=grantContext(db,u);
+ if(isCenterAccount(u)&&(f.scopeType==='hq'||f.scopeType==='center'&&!sameCenter(u,f.scopeId,ctx)))return false;
  if(isDirector(u))return true;
  if(f.ownerId===u.id)return true;
  if(db&&f.scopeType!=='personal'){
@@ -312,18 +315,19 @@ export function canReadFile(u,f,db=null,ctx=null){
  if(f.status!=='approved')return false;
  if((f.allowedUserIds||[]).includes(u.id))return true;
  if(f.scopeType==='personal')return false;
- if(f.scopeType==='center')return centerMember(u)&&sameUnit(u.center,f.scopeId)&&
+ if(f.scopeType==='center')return centerMember(u)&&sameCenter(u,f.scopeId,ctx)&&
    (f.ownerId===u.id||(u.role==='center_leader'&&f.status==='approved'));
  if(f.scopeType==='hq')return hqLeader(u)&&sameUnit(u.department,f.scopeId);
  return false;
 }
 export function canUploadFile(u,scopeType,scopeId,db=null,ctx=null){
  if(!active(u)||!validScope(scopeType))return false;
+ if(db&&!ctx)ctx=grantContext(db,u);
  if(scopeType==='personal')return scopeId===u.id&&(isDirector(u)||legacyPermission(u,'v11:upload_file'));
  if(isDirector(u))return true;
  if(isCenterAccount(u)&&scopeType!=='center')return false;
  if(db&&(ctx||grantContext(db,u)).record({kind:'documents',scopeType,scopeId,status:'draft'},'create'))return true;
- if(scopeType==='center')return (centerMember(u)||centerPermission(u,'center:upload_files'))&&sameUnit(u.center,scopeId);
+ if(scopeType==='center')return (centerMember(u)||centerPermission(u,'center:upload_files'))&&sameCenter(u,scopeId,ctx);
  if(scopeType==='hq')return hqLeader(u)&&sameUnit(u.department,scopeId);
  if(scopeType==='organization')return legacyPermission(u,'v11:upload_file');
  return false;
