@@ -158,3 +158,32 @@ for(const role of ['country_director','international_director','hq_staff','staff
  for(const section of sections){await page.locator('#gaiusV11 [data-section="'+section+'"]').click();await expect(page.locator('#gaiusV11 [data-section="'+section+'"]')).toHaveClass('on');await expect(page.locator('#gaiusV11 .v11content')).toBeVisible();}
  if(['center_leader','potential_department_leader','volunteer'].includes(role))await expect(page.locator('#gaiusV11 [data-section="delegation"]')).toHaveCount(0);
 });
+
+test('shared governance recovers after suspension and retries failed authorization reads',async({page})=>{
+ await page.route('**/gaius-config.js',route=>route.fulfill({contentType:'application/javascript',body:"window.GAIUS_CONFIG={apiUrl:location.origin+'/mock-api'};"}));
+ const me={id:'fixture',name:'Shared test center leader',username:'fixture',role:'center_leader',center:'Gerji',department:'Worship Team',accountStatus:'active',adminPermissions:['center:attendance'],_v:1};
+ const snapshot={me,directory:[me],former:[],users:[],reports:[],plans:[],reviews:[],comments:[],attendance:[],projects:[],announcements:[],documents:[],audit:[],v11:{records:[],files:[],capabilities:{director:false,oversight:false,canApprove:false,allowedKinds:['plans6','monthly','centerAttendance'],readableKinds:['plans6','monthly','centerAttendance'],canUploadFile:true,defaultScopeType:'center',defaultScopeId:'Gerji',hqReports:false}},services:{mediaUploads:true,maxFileBytes:1048576}};
+ const governance={records:[{id:'g',kind:'center',name:'Gerji',region:'country',country:'ET',status:'active',version:1}],grants:[],capabilities:{director:false,centerRole:true,centerId:'g',hq:true,canManageAttendance:true,canManageChildren:false,canManageMentorship:false,canMentor:true},participants:[{id:'fixture',name:me.name,centerId:'g'}],mentors:[],eligibleHQ:[]};
+ let fail=false;
+ await page.route('**/mock-api/**',async route=>{
+ const path=new URL(route.request().url()).pathname;
+ if(path.endsWith('/info'))return route.fulfill({json:{bootstrap:false,emailRecovery:false}});
+ if(path.endsWith('/state'))return route.fulfill({json:snapshot});
+ if(path.endsWith('/command')&&route.request().postDataJSON().action==='governance.list')return fail?route.fulfill({status:503,json:{error:'serviceError'}}):route.fulfill({json:governance});
+ return route.fulfill({status:400,json:{error:'unknown'}});
+ });
+ await page.addInitScript(()=>{localStorage.gLang='en';sessionStorage.setItem('gaius.v10.session:'+location.origin+'/mock-api','synthetic-token');});
+ await page.goto('http://127.0.0.1:4173/index.html');
+ await expect(page.locator('#gaiusV11 .v11nav')).toBeVisible();
+ await page.locator('#gaiusV11 [data-section="governance"]').click();
+ await expect(page.locator('#governancePanel')).toContainText('Gerji');
+ await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});
+ await expect(page.locator('#governancePanel')).toContainText('Reconnect to verify permissions');
+ await expect(page.locator('#governancePanel')).not.toContainText('Gerji');
+ await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:false});document.dispatchEvent(new Event('visibilitychange'));});
+ await expect(page.locator('#governancePanel')).toContainText('Gerji');
+ fail=true;await page.locator('#governancePanel').getByRole('button',{name:'Refresh',exact:true}).click();
+ await expect(page.locator('#governancePanel').getByRole('button',{name:'Retry'})).toBeVisible();
+ fail=false;await page.locator('#governancePanel').getByRole('button',{name:'Retry'}).click();
+ await expect(page.locator('#governancePanel')).toContainText('Gerji');
+});
