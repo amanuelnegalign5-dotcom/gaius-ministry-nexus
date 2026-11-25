@@ -1,3 +1,4 @@
+import {eligibleDelegate,roleClass,classifiedGrantOptions,classifiedGrant,validCenterAttendance,sameAttendanceWeek} from './gaius-report-policy.js';
 // Server-only governance extension. Never store real profiles in public source.
 export const GOVERNANCE_CATALOG={
   "projects": [
@@ -73,7 +74,7 @@ export function governanceService(db,u,action,p,now,idFactory,catalog,media=null
  const str=(v,n=200)=>typeof v==='string'?v.trim().slice(0,n):'';
  const live=x=>!!x?.id&&(x.accountStatus||'active')==='active'&&!x.onboarding;
  const director=x=>live(x)&&['country_director','international_director'].includes(x.role);
- const hq=x=>live(x)&&['admin_finance','followup_leader','service_leader','counseling_leader','support_leader','establishment_leader','media_leader','research_leader','monday_leader','event_leader'].includes(x.role)&&!x.center;
+ const hq=eligibleDelegate;
  const senior=x=>live(x)&&x.role==='center_senior_leader';
  const leaders=['center_senior_leader','center_leader','center_department_leader'];
  const potential=['potential_center_leader','potential_department_leader'];
@@ -89,7 +90,7 @@ export function governanceService(db,u,action,p,now,idFactory,catalog,media=null
  const resolveCenter=x=>{const key=x?.center;if(!key)return undefined;const rows=centers();const direct=rows.find(c=>c.id===key);if(direct)return direct;const matching=rows.filter(c=>c.name===key||[c.direction,c.name].filter(Boolean).join(' — ')===key);return matching.length===1?matching[0]:undefined;};
  const date=v=>typeof v==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(v)&&Number.isFinite(Date.parse(v))&&new Date(v+'T00:00:00Z').toISOString().slice(0,10)===v;
  const stamp=v=>typeof v==='string'&&/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/.test(v)&&Number.isFinite(Date.parse(v));
- const grant=(module,op,r)=>hq(u)&&db.all('governance_grants').some(g=>g.recipientId===u.id&&g.status==='active'&&director(db.one('users',g.issuerId))&&g.modules.includes(module)&&g.actions.includes(op)&&(!g.startsAt||Date.parse(g.startsAt)<=now)&&(!g.endsAt||now<Date.parse(g.endsAt))&&(g.scope==='organization'||g.scope===r.region||g.scope===r.centerId||g.scope===r.id));
+ const grant=(module,op,r)=>hq(u)&&db.all('governance_grants').some(g=>g.recipientId===u.id&&g.status==='active'&&!g.revokedAt&&director(db.one('users',g.issuerId))&&classifiedGrant(u,g.modules,g.actions)&&g.modules.includes(module)&&g.actions.includes(op)&&(!g.startsAt||Date.parse(g.startsAt)<=now)&&(!g.endsAt||now<Date.parse(g.endsAt))&&(g.scope==='organization'||g.scope===r.region||g.scope===r.centerId||g.scope===r.id));
  const belongs=r=>{const c=resolveCenter(u);return !!c&&(r.centerId===c.id||r.kind==='center'&&r.id===c.id);};
  const canView=r=>director(u)||grant(kindMap[r.kind],'view',r)||(centerRole(u)&&belongs(r)&&((['center','progress'].includes(r.kind)||r.kind==='attendance'&&(senior(u)||r.participantId===u.id))||r.kind==='child'&&(senior(u)||r.mentorId===u.id)||r.kind==='mentee'&&(senior(u)||r.mentorId===u.id)));
  const canWrite=(r,op)=>director(u)&&region(u)===r.region||grant(kindMap[r.kind],op,r)||(centerRole(u)&&belongs(r)&&(r.kind==='child'&&senior(u)||r.kind==='mentee'&&senior(u)||r.kind==='progress'&&leaders.includes(u.role)&&r.ownerId===u.id||r.kind==='attendance'&&senior(u)));
@@ -99,13 +100,13 @@ export function governanceService(db,u,action,p,now,idFactory,catalog,media=null
  check(live(u));
  if(action==='governance.list'){
   const records=all().filter(canView).map(safeRecord);
-  return {records,grants:db.all('governance_grants').filter(g=>director(u)||g.recipientId===u.id).map(g=>({...g,effectiveStatus:g.status==='revoked'?'revoked':g.endsAt&&Date.parse(g.endsAt)<=now?'expired':g.startsAt&&Date.parse(g.startsAt)>now?'scheduled':'active'})),catalog:director(u)?catalog:null,capabilities:{director:director(u),region:region(u),senior:senior(u),centerId:resolveCenter(u)?.id||'',centerRole:centerRole(u),hq:hq(u),canManageChildren:senior(u)||director(u),canMentor:leaders.includes(u.role)},participants:db.all('users').filter(x=>live(x)&&[...leaders,...potential].includes(x.role)&&(director(u)||!!resolveCenter(u)&&resolveCenter(x)?.id===resolveCenter(u)?.id)).map(x=>({id:x.id,name:x.name,centerId:resolveCenter(x)?.id||''})),eligibleHQ:director(u)?db.all('users').filter(hq).map(x=>({id:x.id,name:x.name,role:x.role})):[],mentors:db.all('users').filter(x=>live(x)&&leaders.includes(x.role)&&(director(u)||resolveCenter(x)?.id===resolveCenter(u)?.id&&!!resolveCenter(u))).map(x=>({id:x.id,name:x.name,centerId:resolveCenter(x)?.id||''}))};
+  return {records,grants:db.all('governance_grants').filter(g=>director(u)||hq(u)&&g.recipientId===u.id&&classifiedGrant(u,g.modules,g.actions)).map(g=>({...g,effectiveStatus:g.status==='revoked'?'revoked':!classifiedGrant(db.one('users',g.recipientId),g.modules,g.actions)?'ineligible':g.endsAt&&Date.parse(g.endsAt)<=now?'expired':g.startsAt&&Date.parse(g.startsAt)>now?'scheduled':'active'})),catalog:director(u)?catalog:null,capabilities:{director:director(u),region:region(u),senior:senior(u),centerId:resolveCenter(u)?.id||'',centerRole:centerRole(u),hq:hq(u),canManageChildren:senior(u)||director(u),canMentor:leaders.includes(u.role)},participants:db.all('users').filter(x=>live(x)&&[...leaders,...potential].includes(x.role)&&(director(u)||!!resolveCenter(u)&&resolveCenter(x)?.id===resolveCenter(u)?.id)).map(x=>({id:x.id,name:x.name,centerId:resolveCenter(x)?.id||''})),eligibleHQ:director(u)?db.all('users').filter(hq).map(x=>({id:x.id,name:x.name,role:x.role,classification:roleClass(x),...classifiedGrantOptions(x)})):[],mentors:db.all('users').filter(x=>live(x)&&leaders.includes(x.role)&&(director(u)||resolveCenter(x)?.id===resolveCenter(u)?.id&&!!resolveCenter(u))).map(x=>({id:x.id,name:x.name,centerId:resolveCenter(x)?.id||''}))};
  }
  if(action==='governance.grant'){
   check(director(u));const recipient=db.one('users',str(p.recipientId));check(hq(recipient),'recipientInvalid',400);
   const type=str(p.type),scope=str(p.scope),startsAt=p.startsAt||null,endsAt=p.endsAt||null;
   check(['permission','delegation'].includes(type)&&(['organization','country','international'].includes(scope)||centers().some(c=>c.id===scope)),'scopeInvalid',400);
-  check(Array.isArray(p.modules)&&p.modules.length&&p.modules.every(m=>modules.includes(m))&&Array.isArray(p.actions)&&p.actions.length&&p.actions.every(a=>actTypes.includes(a)),'permissionsInvalid',400);
+  check(classifiedGrant(recipient,p.modules,p.actions),'permissionsInvalid',400);
   check((!startsAt||stamp(startsAt))&&(!endsAt||stamp(endsAt))&&(!startsAt||!endsAt||Date.parse(endsAt)>Date.parse(startsAt))&&(!endsAt||Date.parse(endsAt)>now),'dateInvalid',400);
   check(type!=='delegation'||startsAt&&endsAt&&str(p.purpose,1000)&&str(p.reference),'delegationTimeRequired',400);
   const g={id:idFactory(),issuerId:u.id,recipientId:recipient.id,type,scope,modules:[...new Set(p.modules)],actions:[...new Set(p.actions)],startsAt,endsAt,purpose:str(p.purpose,1000),reference:str(p.reference),status:'active',createdAt:new Date(now).toISOString()};
@@ -173,8 +174,9 @@ export function governanceService(db,u,action,p,now,idFactory,catalog,media=null
   row.participantId=str(p.participantId);row.date=str(p.date);row.program=str(p.program);
   const participant=db.one('users',row.participantId);
   check(live(participant)&&[...leaders,...potential].includes(participant.role)&&resolveCenter(participant)?.id===centerId&&date(row.date)&&['sunday','other_center_meeting'].includes(row.program)&&['present','absent','late','excused'].includes(row.status),'attendanceInvalid',400);
-  if(row.program==='sunday')check(new Date(row.date+'T12:00:00Z').getUTCDay()===0,'sundayRequired',400);
-  check(!all().some(x=>x.kind==='attendance'&&x.id!==row.id&&x.centerId===centerId&&x.participantId===row.participantId&&x.date===row.date&&x.program===row.program),'attendanceExists',409);
+  check(validCenterAttendance(row.date,row.program),row.program==='sunday'?'sundayRequired':'weeklyMeetingDayInvalid',400);
+  check(!all().some(x=>x.kind==='attendance'&&x.id!==row.id&&x.centerId===centerId&&sameAttendanceWeek(x,row)),'attendanceExists',409);
+  check(!db.all('v11_records').some(x=>x.kind==='centerAttendance'&&x.status!=='archived'&&x.scopeType==='center'&&[c.id,c.name,[c.direction,c.name].filter(Boolean).join(' — ')].includes(x.scopeId)&&sameAttendanceWeek({date:x.data?.date,program:x.data?.eventType,participantId:x.data?.participantId},row)),'attendanceExists',409);
   row.name=participant.name;
  }else{
   row.purpose=str(p.purpose,4000);row.lead=str(p.lead);row.start=str(p.start);row.end=str(p.end);row.challenges=str(p.challenges,4000);row.nextAction=str(p.nextAction,4000);row.outcome=str(p.outcome,4000);row.department=str(p.department);row.planId=str(p.planId);row.meetingType=str(p.meetingType);row.frequency=str(p.frequency);row.budget=str(p.budget,80);row.members=str(p.members,4000);row.deliverables=str(p.deliverables,4000);row.quantitative=str(p.quantitative,2000);row.qualitative=str(p.qualitative,4000);
