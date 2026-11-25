@@ -42,4 +42,22 @@ test('service worker offline reload, encrypted new draft, reconnect sync',async(
  await expect(page.locator('#gaiusV11')).not.toContainText('Synthetic offline report');
  expect(writes[0].requestId).toMatch(/^[a-z0-9-]{36}$/);
  expect(writes[0].payload.scopeId).toBe('Gerji');
+ // Logout without connectivity, then authenticate again from the ordinary login page.
+ await context.setOffline(true);
+ await page.locator('#logout').click();
+ await expect(page.locator('#auth')).toBeVisible();
+ await page.locator('#username').fill('offline');
+ await page.locator('#password').fill('incorrect-passphrase');
+ await page.locator('#authBtn').click();
+ await expect(page.locator('#authMsg')).toContainText('Incorrect offline passphrase');
+ await page.locator('#password').fill('synthetic-offline-passphrase');
+ await page.locator('#authBtn').click();
+ await expect(page.locator('#gaiusV11')).toContainText('Encrypted pending drafts');
+ await expect(page.locator('#gaiusV11 [data-section="delegation"]')).toHaveCount(0);
+ expect(await page.evaluate(api=>sessionStorage.getItem('gaius.v10.session:'+api),api)).toBeNull();
+ expect(await page.evaluate(()=>sessionStorage.getItem('gaius.offline.localSession'))).toBe('offline-user');
+ await page.locator('#logout').click();
+ await expect(page.locator('#auth')).toBeVisible();
+ expect(await page.evaluate(()=>sessionStorage.getItem('gaius.offline.localSession'))).toBeNull();
+
 });
