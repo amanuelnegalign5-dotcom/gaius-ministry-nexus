@@ -16,12 +16,14 @@ function mountGovernance(store, HQ_CHARTERS, CENTER_CHARTERS){
  const listChoices=(rows)=>rows.map(r=>[r.id,r.name]);
  const msg=(m)=>{let s=dialog.querySelector('[data-message]');if(s)s.textContent=m;};
  async function refresh(){const mark=seq;const a=await store.command('governance.list',{});const b=await store.state();if(mark!==seq||!dialog.isConnected)return false;snapshot=a;me=b.me;return true;}
- async function open(event){if(event?.detail?.tab&&Object.hasOwn(kinds,event.detail.tab))tab=event.detail.tab;if(!store.shared){alert(tr('ይህ ክፍል የተጠበቀ ኦንላይን አገልግሎት ይፈልጋል።','This workspace requires the secure online service.'));return;}const mount=document.getElementById('v11GovernanceMount');if(!mount)return;seq++;mount.replaceChildren(dialog);dialog.replaceChildren(el('p','Loading…'));try{if(await refresh())render();}catch(e){dialog.replaceChildren(el('p',e.message),btn('Close',close));}}
+ async function open(event){if(event?.detail?.tab&&Object.hasOwn(kinds,event.detail.tab))tab=event.detail.tab;if(!store.shared){alert(tr('ይህ ክፍል የተጠበቀ ኦንላይን አገልግሎት ይፈልጋል።','This workspace requires the secure online service.'));return;}const mount=document.getElementById('v11GovernanceMount');if(!mount)return;const mark=++seq;mount.replaceChildren(dialog);dialog.replaceChildren(el('p','Loading…'));try{if(await refresh())render();}catch(e){if(mark===seq&&dialog.isConnected)dialog.replaceChildren(el('p',e.message),btn(tr('እንደገና ሞክር','Retry'),open));}}
  function close(){seq++;snapshot=null;me=null;dialog.remove();dialog.replaceChildren();}
  
  window.addEventListener('gaius:nexus-session-cleared',close);
- window.addEventListener('offline',close);
- document.addEventListener('visibilitychange',()=>{if(document.hidden&&dialog.isConnected)close();});
+ function suspend(){if(!dialog.isConnected)return;seq++;snapshot=null;me=null;dialog.replaceChildren(el('p',tr('ግንኙነትና ፈቃድ እንደገና ይረጋገጣል።','Reconnect to verify permissions.')),btn(tr('አድስ','Refresh'),open));}
+ function resume(){if(!document.hidden&&navigator.onLine&&document.getElementById('v11GovernanceMount')&&dialog.isConnected&&!snapshot)void open();}
+ window.addEventListener('offline',suspend);window.addEventListener('online',resume);
+ document.addEventListener('visibilitychange',()=>{if(document.hidden)suspend();else resume();});
  async function write(action,payload){if(busy)return;busy=true;const mark=seq;try{await store.command(action,payload);if(mark===seq&&dialog.isConnected&&await refresh())render();}catch(e){if(mark===seq)msg(e.message);}finally{busy=false;}}
  function field(form,name,label,opts,value,required=false){const wrap=el('label',label,{style:'display:grid;gap:5px;margin:9px 0;'});let x;if(Array.isArray(opts)){x=el('select');for(const [k,v] of choices(opts)){const o=el('option',v,{value:k});x.append(o);}x.value=String(value??'');if(!x.value&&required&&x.options.length)x.selectedIndex=0;}else{x=el(opts==='textarea'?'textarea':'input');if(opts!=='textarea')x.type=opts||'text';x.value=value??'';}x.name=name;x.required=required;wrap.append(x);form.append(wrap);return x;}
  function editor(kind,record={},seed={}){const c=snapshot.capabilities, v={...seed,...record};const form=el('form',null,{style:'display:block;padding:12px;border:1px solid #b8c7bf;border-radius:12px;margin:10px 0;'});
