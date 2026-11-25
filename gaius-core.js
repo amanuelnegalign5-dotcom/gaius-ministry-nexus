@@ -349,7 +349,9 @@ function editRecord(db,u,bucket,d){
 function removeRecord(db,u,d){
   need(full(u));required(['reports','plans','comments','projects','announcements','attendance','documents'].includes(d.bucket),'unknown');
   need(!(d.bucket==='reports'&&sourceIds.includes(d.id)),'sourceLocked');
-  const old=exists(db.one(d.bucket,d.id));fresh(old,d.version);db.drop(d.bucket,d.id);
+  const old=exists(db.one(d.bucket,d.id));
+  if(d.bucket==='attendance')need(isMondayManager(u),'forbidden');
+  fresh(old,d.version);db.drop(d.bucket,d.id);
   audit(db,u,d.bucket+'.remove',d.id);return {id:d.id};
 }
 function visibleState(db,u){
@@ -368,7 +370,7 @@ function visibleState(db,u){
     users:admin?all.filter(x=>full(u)||canManage(u,x)).map(privateUser):[],reports,plans,
     reviews:reviews.filter(r=>r.kind==='plan'?planIds.has(r.itemId):reportIds.has(r.itemId)),
     comments:reportAccess?db.all('comments').filter(c=>reportIds.has(c.reportId)&&(c.visible===true||directors.includes(u.role))):[],
-    mondayRoster:isMondayManager(u)?[...seedPeople,...members].filter(isMondayParticipant).map(directoryUser):isMondayParticipant(u)?[directoryUser(u)]:[],
+    mondayRoster:isMondayManager(u)?[...seedPeople,...members].filter(isMondayParticipant).map(p=>({...directoryUser(p),regular:p.regular,monthlyOnce:p.monthlyOnce})):isMondayParticipant(u)?[directoryUser(u)]:[],
     attendance:isMondayParticipant(u)?db.all('attendance').filter(r=>isMondayParticipant(mondayPerson(db,r.personId))&&(managesAttendance(u)||r.personId===u.id)):[],
     projects:db.all('projects').filter(r=>full(u)||r.createdBy===u.id),announcements:db.all('announcements'),
     documents:permit(u,'documents')?db.all('documents').filter(r=>full(u)||r.ownerId===u.id):[],
