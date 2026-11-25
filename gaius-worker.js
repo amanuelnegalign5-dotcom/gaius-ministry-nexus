@@ -1,6 +1,9 @@
 // Optional shared service. Wrangler bundles this module with gaius-core.js.
 import { AppError, digest, handle, authenticatedUser } from './gaius-core.js';
 import {canReadFile,canUploadFile} from './gaius-v11-core.js';
+import {governanceService,GOVERNANCE_CATALOG} from './gaius-governance-service.js';
+import {privatePhotoCommand} from './gaius-private-media.js';
+import {SqlPrivateMedia,privateMediaBucket} from './gaius-sqlite-media.js';
 import { RecoveryService, recoveryReady } from './gaius-recovery.js';
 
 class SqlRecords {
@@ -29,7 +32,7 @@ class SqlRecords {
 }
 const json=(body,status=200,headers={})=>new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...headers}});
 export class MinistryWorkspace {
-  constructor(ctx,env){this.db=new SqlRecords(ctx.storage);this.env=env;this.recovery=new RecoveryService(this.db,env);}
+  constructor(ctx,env){this.db=new SqlRecords(ctx.storage);this.media=privateMediaBucket(new SqlPrivateMedia(ctx.storage),env.MEDIA_BUCKET);this.env=env;this.recovery=new RecoveryService(this.db,env);}
   async fetch(request){
     try{
       const pathname=new URL(request.url).pathname;
@@ -101,25 +104,36 @@ export class MinistryWorkspace {
         const person=this.db.one('users',String(data.payload?.id||''));
         const personalFiles=person?this.db.all('v11_files').filter(f=>f.ownerId===person.id&&f.scopeType==='personal'):[];
         const result=await handle(this.db,route,data,{token,bootstrapAuthorized});
-        if(this.env.MEDIA_BUCKET)for(const f of personalFiles)await this.env.MEDIA_BUCKET.delete(f.key);
+        if(this.media)for(const f of personalFiles)await this.media.delete(f.key);
         return json(result);
       }
       if(route==='command'&&data.action==='v11.fileReview'&&data.payload?.decision==='removed'){
         const f=this.db.one('v11_files',String(data.payload.id||''));
         const result=await handle(this.db,route,data,{token,bootstrapAuthorized});
-        if(f?.key&&this.env.MEDIA_BUCKET)await this.env.MEDIA_BUCKET.delete(f.key);
+        if(f?.key&&this.media)await this.media.delete(f.key);
         return json(result);
+      }
+      if(route==='command'&&typeof data.action==='string'&&data.action.startsWith('governance.')){
+        const {user}=await authenticatedUser(this.db,token);
+        const payload=data.payload||{};
+        if(typeof payload!=='object'||Array.isArray(payload))throw new AppError('unknown',400);
+        const run=(media=null)=>this.db.atomic(()=>{const fresh=this.db.one('users',user.id);if(!fresh||(fresh.sessionVersion||0)!==(user.sessionVersion||0))throw new AppError('expired',401);return governanceService(this.db,fresh,data.action,payload,Date.now(),()=>crypto.randomUUID(),GOVERNANCE_CATALOG,media);});
+        if(['governance.photo','governance.setPhoto'].includes(data.action)){
+          const result=await privatePhotoCommand({action:data.action,payload,bucket:this.media,run,revalidate:async()=>{await authenticatedUser(this.db,token);},idFactory:()=>crypto.randomUUID()});
+          return json(result);
+        }
+        return json(run());
       }
       if(route==='state'){
         const snapshot=await handle(this.db,route,data,{token,bootstrapAuthorized});
-        return json({...snapshot,services:{mediaUploads:!!this.env.MEDIA_BUCKET}});
+        return json({...snapshot,services:{mediaUploads:true,mediaMode:this.media.mode,maxFileBytes:this.media.maxFileBytes}});
        }
        return json(await handle(this.db,route,data,{token,bootstrapAuthorized}));
     }catch(e){return e instanceof AppError||Number.isInteger(e?.status)?json({error:e.message},e.status):json({error:'serviceError'},500);}
   }
   async upload(request){
     if(request.method!=='POST')throw new AppError('unknown',405);
-    if(!this.env.MEDIA_BUCKET)throw new AppError('storageNotConfigured',503);
+    if(!this.media)throw new AppError('storageNotConfigured',503);
     const token=(request.headers.get('Authorization')||'').replace(/^Bearer /,'');
     const {user}=await authenticatedUser(this.db,token);
     const scopeType=request.headers.get('X-Gaius-Scope')||'organization';
@@ -139,9 +153,9 @@ export class MinistryWorkspace {
     if(!name)throw new AppError('fileInvalid',400);
     const ext=name.split('.').pop()?.toLowerCase();
     if(!allowed.get(type)?.includes(ext))throw new AppError('fileInvalid',415);
-    if(Number(request.headers.get('Content-Length')||0)>10*1024*1024)throw new AppError('fileTooLarge',413);
+    if(Number(request.headers.get('Content-Length')||0)>this.media.maxFileBytes)throw new AppError('fileTooLarge',413);
     const bytes=await request.arrayBuffer();
-    if(bytes.byteLength===0||bytes.byteLength>10*1024*1024)throw new AppError('fileTooLarge',413);
+    if(bytes.byteLength===0||bytes.byteLength>this.media.maxFileBytes)throw new AppError('fileTooLarge',413);
     const first=new Uint8Array(bytes.slice(0,16));
     const starts=(...b)=>b.every((v,i)=>first[i]===v);
     if(type==='application/pdf'&&!starts(37,80,68,70,45))throw new AppError('fileInvalid',415);
@@ -156,7 +170,7 @@ export class MinistryWorkspace {
     if(type==='image/webp'&&!(starts(82,73,70,70)&&String.fromCharCode(...first.slice(8,12))==='WEBP'))throw new AppError('fileInvalid',415);
     if(type==='video/mp4'&&String.fromCharCode(...first.slice(4,8))!=='ftyp')throw new AppError('fileInvalid',415);
     const id=crypto.randomUUID(),key='private/'+id;
-    await this.env.MEDIA_BUCKET.put(key,bytes,{httpMetadata:{contentType:type}});
+    await this.media.put(key,bytes,{httpMetadata:{contentType:type}});
     const record={id,key,name,type,size:bytes.byteLength,scopeType,scopeId,ownerId:user.id,
       allowedUserIds:[],status:'pending',createdAt:new Date().toISOString()};
     await this.db.atomic(()=>this.db.put('v11_files',record));
@@ -164,14 +178,14 @@ export class MinistryWorkspace {
   }
   async download(request){
     if(request.method!=='POST')throw new AppError('unknown',405);
-    if(!this.env.MEDIA_BUCKET)throw new AppError('storageNotConfigured',503);
+    if(!this.media)throw new AppError('storageNotConfigured',503);
     const token=(request.headers.get('Authorization')||'').replace(/^Bearer /,'');
     const {user}=await authenticatedUser(this.db,token);
     let data;try{data=await request.json();}catch{throw new AppError('unknown',400);}
     const file=this.db.one('v11_files',String(data.id||''));
     if(!file)throw new AppError('missing',404);
     if(!canReadFile(user,file))throw new AppError('forbidden',403);
-    const result=await this.env.MEDIA_BUCKET.get(file.key);
+    const result=await this.media.get(file.key);
     if(!result)throw new AppError('missing',404);
     return new Response(result.body,{headers:{'Content-Type':file.type,'Content-Disposition':"attachment; filename*=UTF-8''"+encodeURIComponent(file.name),
       'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});

@@ -58,8 +58,8 @@ test('offline local browser cannot self-issue director privilege',async()=>{
 });
 test('center monthly report stays within its center leadership and the directors',async()=>{
  const db=new MemoryDB();await register(db,'country_director','Country');
- await register(db,'center_leader','GerjiLead',{center:'Gerji'});
- await register(db,'center_leader','MekanisaLead',{center:'Mekanisa'});
+ await register(db,'center_leader','GerjiLead',{center:'Gerji',department:'Service Coordination'});
+ await register(db,'center_leader','MekanisaLead',{center:'Mekanisa',department:'Service Coordination'});
  await register(db,'center_department_leader','GerjiArts',{center:'Gerji',department:'Art and Literature Department'});
  const boss=await login(db,'Country');
  const us=(await state(db,boss)).users;

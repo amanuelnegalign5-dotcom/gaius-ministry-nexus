@@ -21,8 +21,8 @@ async function setup(){
  await make(db,'country_director','Director');
  await make(db,'media_leader','Media');
  await make(db,'followup_leader','Followup');
- await make(db,'center_leader','Gerji',{center:'Gerji'});
- await make(db,'center_leader','Mekanisa',{center:'Mekanisa'});
+ await make(db,'center_leader','Gerji',{center:'Gerji',department:'Service Coordination'});
+ await make(db,'center_leader','Mekanisa',{center:'Mekanisa',department:'Service Coordination'});
  await make(db,'center_department_leader','Arts',{center:'Gerji',department:'Arts'});
  await make(db,'center_department_leader','Worship',{center:'Gerji',department:'Worship'});
  await make(db,'hq_staff','Staff',{department:'Media'});
@@ -57,7 +57,8 @@ test('v11 scope checks stop cross-unit reads, writes and reviews',async()=>{
  await cmd(db,t.Arts,'v11.transition',{id:b.id,version:db.one('v11_records',b.id)._v,decision:'submit'});
  assert.equal(db.one('v11_records',b.id).data.departmentType,'Arts');
  assert.equal((await state(db,t.Gerji)).v11.records.some(r=>r.id===b.id),true);
- for(const name of ['Media','Followup','Mekanisa','Worship','Staff'])
+ assert.equal((await state(db,t.Worship)).v11.records.some(r=>r.id===b.id),true,'same-center submitted reports are shared by new policy');
+ for(const name of ['Media','Followup','Mekanisa','Staff'])
    assert.equal((await state(db,t[name])).v11.records.some(r=>r.id===b.id),false);
  assert.equal((await state(db,t.Arts)).v11.records.some(r=>r.id===a.id),false);
  assert.equal((await state(db,boss)).v11.records.some(r=>r.id===b.id),true);
@@ -96,3 +97,5 @@ test('pending center files remain hidden from other units and unrelated staff',a
    assert.equal((await state(db,t[name])).v11.files.some(x=>x.id==='center-file'),false);
  assert.equal((await state(db,boss)).v11.files.some(x=>x.id==='center-file'),true);
 });
+
+test('center leadership registration requires a department; potential leader does not',async()=>{const db=new DB();await assert.rejects(make(db,'center_senior_leader','MissingDepartment',{center:'Gerji'}),err('departmentRequired'));await make(db,'center_senior_leader','Senior',{center:'Gerji',department:'Worship'});await make(db,'potential_center_leader','Potential',{center:'Gerji'});assert.equal(db.all('users').length,2);});

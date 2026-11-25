@@ -1,0 +1,7 @@
+# No-card private media storage
+Default deployment uses the existing SQLite-backed WORKSPACE Durable Object. No R2 subscription is required. A separate private_media table holds binary files; only authenticated Worker endpoints authorize delivery. New Gaius lijoch photo uploads retain consent and mentor/center authorization. Existing inline photos stay readable. Application limits: 1 MiB per document/file in SQLite mode, 128 MiB aggregate private-media quota, 300 KB photo UI limit. Cloudflare free-plan operation and storage limits still apply. Private media must never be added to GitHub, public URLs or the service-worker cache.
+Optional future R2: after account activation, create the private bucket gaius-nexus-private-media (no r2.dev or public domains); add the following top-level configuration to wrangler.jsonc:
+```json
+"r2_buckets": [{"binding":"MEDIA_BUCKET","bucket_name":"gaius-nexus-private-media"}]
+```
+The backend selects R2 for new writes when bound and continues reading/deleting older SQLite objects; no bulk migration is needed. Retain the same WORKSPACE binding and migration history. The default no-card release still needs production deployment and real browser/authorization testing; automated tests do not prove deployed behavior.

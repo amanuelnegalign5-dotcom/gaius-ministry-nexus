@@ -26,7 +26,7 @@ const hqRoles=[
 async function fixture(){
  const db=new DB(); await register(db,'country_director','Director');
  for(let i=0;i<hqRoles.length;i++)await register(db,hqRoles[i],'HQ'+i);
- await register(db,'center_leader','Center',{center:'Gerji'});
+ await register(db,'center_leader','Center',{center:'Gerji',department:'Service Coordination'});
  await register(db,'center_department_leader','CenterArts',{center:'Gerji',department:'Arts'});
  await register(db,'hq_staff','OrdinaryStaff',{department:'Media'});
  await register(db,'event_leader','LegacyEvent');
