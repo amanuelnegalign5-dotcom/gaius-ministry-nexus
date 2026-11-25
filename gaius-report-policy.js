@@ -52,7 +52,7 @@ export function classifiedGrant(u,modules,actions){
  return Array.isArray(modules)&&modules.length>0&&modules.every(m=>allowed.modules.includes(m))&&Array.isArray(actions)&&actions.length>0&&actions.every(a=>allowed.actions.includes(a));
 }
 export function centerAttendanceWeek(date){
- if(typeof date!=='string'||!/^\\d{4}-\\d{2}-\\d{2}$/.test(date))return null;
+ if(typeof date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(date))return null;
  const d=new Date(date+'T00:00:00Z');if(!Number.isFinite(+d)||d.toISOString().slice(0,10)!==date)return null;
  const day=d.getUTCDay();d.setUTCDate(d.getUTCDate()-day);return {day,week:d.toISOString().slice(0,10)};
 }
