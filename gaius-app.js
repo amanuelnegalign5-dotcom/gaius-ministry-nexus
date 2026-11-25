@@ -1,4 +1,4 @@
-import {classifiedPermissions,roleClass,isCenterAccount} from './gaius-report-policy.js';
+import {classifiedPermissions,roleClass,isCenterAccount,eligibleDelegate} from './gaius-report-policy.js';
 import * as store from './gaius-store.js';
 import { CENTER_UNITS } from './gaius-v11-model.js';
 import { roleDepartments, directors, permissions, seedPeople, stateOf, full, permit, seesReports, writesReports, managesAttendance, isMondayParticipant, publishes, canManage, flow, version } from './gaius-core.js';
@@ -98,7 +98,15 @@ inviteHelp|ጊዜያዊውን የይለፍ ቃል በግል ያስረክቡ። �
 complete|ምዝገባዬን አጠናቅቅ|Complete my account
 completeHelp|ፕሮፋይልዎን ይሙሉ፣ 12ቱን ድንጋጌዎች ያንብቡ፣ አዲስ የግል የይለፍ ቃል ይምረጡ።|Complete your profile, read the 12 statements and choose a new personal password.
 fullAdmin|ሙሉ አስተዳዳሪ|Full administrator
-limited|ውስን አስተዳዳሪ|Delegated administrator
+limited|ተጨማሪ ፈቃድ|Additional permissions
+center:attendance|የራስ ማዕከል መገኘት ማስተዳደር|Manage own-center attendance
+center:lijoch|የራስ ማዕከል ልጆች መዝገብ|Manage own-center Gaius Lijoch
+center:mentorship|የራስ ማዕከል መካሪነት|Manage own-center mentorship
+center:review_reports|የራስ ማዕከል ሪፖርት ግምገማ|Review own-center reports (request changes)
+center:review_plans|የራስ ማዕከል ዕቅድ ግምገማ|Review own-center plans (request changes)
+center:submit_reports|የራስ ማዕከል ሪፖርት ማቅረብ|Submit own center report
+center:submit_plans|የራስ ማዕከል ዕቅድ ማቅረብ|Submit own center plan
+center:upload_files|የራስ ማዕከል ሰነድ ማስገባት|Upload own-center documents
 standard|ተጠቃሚ|Member
 permissions|ሚናና ፈቃዶች|Role and permissions
 review_reports|ሪፖርቶችን ማጽደቅ|Review reports
@@ -718,7 +726,7 @@ function userAccessEditor(u){
  if(!full(current())||stateOf(u)!=='active')return '';
  return `<details class="accessEditor"><summary>${h(t('permissions'))}</summary><label>${h(t('role'))}<select data-role>${options(Object.keys(roleDepartments).map(k=>[k,role(k)]),u.role)}</select></label><label>${h(t('department'))}<select data-department>${options(Object.keys(departments).map(k=>[k,dept(k)]),u.department)}</select></label>
  <label>Center / ማዕከል<input data-center value="${h(u.center||'')}" placeholder="Center"></label>
- <input type="checkbox" data-full hidden ${directors.includes(u.role)?'checked':''}><p data-permission-class>${h(roleClass(u))}</p><div class="actions" data-role-permissions>${classifiedPermissions(u).map(p=>`<label class="perm pill"><input type="checkbox" data-permission="${p}" ${(u.adminPermissions||[]).includes(p)?'checked':''}>${h(t(p))}</label>`).join('')}</div><div class="actions">${button('access','save')}</div></details>`;
+ <input type="checkbox" data-full hidden ${directors.includes(u.role)?'checked':''}><p data-permission-class>${h(roleClass(u))}</p><div class="actions" data-role-permissions>${classifiedPermissions(u).map(p=>`<label class="perm pill"><input type="checkbox" data-permission="${p}" ${(u.adminPermissions||[]).includes(p)?'checked':''}>${h(t(p))}</label>`).join('')}</div><p class="muted">${isCenterAccount(u)?(lang==='am'?'መደበኛ የማዕከል ኃላፊነቶች በሚናው ይቀጥላሉ። እዚህ የሚመረጡት ተጨማሪ የራስ ማዕከል ፈቃዶች ናቸው።':'Base center responsibilities remain assigned by role. These are additional own-center permissions.'):(lang==='am'?'ፈቃድ ውክልና አይደለም።':'Permission is not delegation.')}</p><div class="actions">${button('access','save')}${eligibleDelegate(u)?`<button type="button" class="btn ghost" data-action="open-delegation">${lang==='am'?'ውክልና ስጥ':'Grant delegation'}</button>`:''}</div></details>`;
 }
 document.addEventListener('change',e=>{if(!e.target.matches('.accessEditor [data-role], .accessEditor [data-center]'))return;const editor=e.target.closest('.accessEditor'),selected={role:editor.querySelector('[data-role]').value,center:editor.querySelector('[data-center]').value,accountStatus:'active'};editor.querySelector('[data-permission-class]').textContent=roleClass(selected);editor.querySelector('[data-role-permissions]').innerHTML=classifiedPermissions(selected).map(p=>`<label class="perm pill"><input type="checkbox" data-permission="${p}"> ${h(t(p))}</label>`).join('');});
 function renderAdmin(){
@@ -729,7 +737,7 @@ function renderAdmin(){
  $('userCounts').textContent=['pending','active','removed'].map(s=>t(s)+' '+us.filter(u=>stateOf(u)===s).length).join(' · ');
  const list=us.filter(u=>(!filter||stateOf(u)===filter)&&(!q||[u.name,u.username].some(v=>(v||'').toLowerCase().includes(q)))).sort((a,b)=>Number(stateOf(b)==='pending')-Number(stateOf(a)==='pending'));
  $('adminUsers').innerHTML=list.map(u=>{
-  const status=stateOf(u),manage=canManage(me,u),labels=[u.fullAdmin||directors.includes(u.role)?t('fullAdmin'):u.adminPermissions?.length?t('limited'):t('standard'),u.onboarding?t('onboardingTag'):''].filter(Boolean);
+  const status=stateOf(u),manage=canManage(me,u),labels=[classifiedPermissions(u).some(p=>(u.adminPermissions||[]).includes(p))?t('limited'):'',u.onboarding?t('onboardingTag'):''].filter(Boolean);
   return `<article class="item userItem" data-id="${h(u.id)}" data-version="${version(u)}"><div class="top"><div><b>${h(u.name)}</b> <span class="muted">@${h(u.username)}</span><div class="muted">${h(role(u.role))} · ${h(labels.join(' · '))}</div></div>${badge(status)}</div>
   <div class="actions">${manage&&status==='pending'?button('account.approve','approve',{},'btn'):''}${manage&&status!=='removed'?button('account.remove','removeUser'):''}${manage&&status==='removed'?button('account.restore','restore'):''}${full(me)&&status==='active'?button('edit-profile','editProfile'):''}</div>
   <details><summary>${h(t('profile'))}</summary>${fields([...profileKeys.filter(k=>k!=='name').map(k=>[k,u[k]]),...addrKeys.map(k=>[k,u.address?.[k]])])}</details>
@@ -817,6 +825,7 @@ document.addEventListener('click',e=>{
     return;
   }
   if(a.startsWith('account.')){if(a!=='account.remove'||confirm(t('confirmRemove')))await mutate(a,userRef);return;}
+  if(a==='open-delegation'){window.dispatchEvent(new CustomEvent('gaius:nexus-open-delegation',{detail:{recipientId:userRef.id}}));return;}
   if(a==='access'){await mutate('account.access',{...userRef,role:user.querySelector('[data-role]').value,department:user.querySelector('[data-department]').value,center:user.querySelector('[data-center]').value,
      permissions:[...user.querySelectorAll('[data-permission]:checked')].map(el=>el.dataset.permission),fullAdmin:directors.includes(user.querySelector('[data-role]').value)});return;}
   if(a==='reset'){await mutate('account.reset',{...userRef,password:user.querySelector('[data-reset]').value});return;}
