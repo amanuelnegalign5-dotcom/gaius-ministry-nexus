@@ -218,12 +218,13 @@ const vis=(el,show)=>{(typeof el==='string'?$(el):el).classList.toggle('hide',!s
 const options=(a,current)=>a.map(([v,label])=>`<option value="${h(v)}" ${v===current?'selected':''}>${h(label)}</option>`).join('');
 const empty=()=>`<p class="muted">${h(t('empty'))}</p>`;
 const current=()=>view?.me;
+function syncMondayAccess(){const allowed=!view?.onboarding&&isMondayParticipant(current());$('app').dataset.mondayAccess=allowed?'yes':'no';return allowed;}
 const day=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Africa/Addis_Ababa',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 function monday(date){const d=new Date(date+'T12:00:00Z');d.setUTCDate(d.getUTCDate()-(d.getUTCDay()+6)%7);return d.toISOString().slice(0,10);}
 function dateTime(s){return s&&Number.isFinite(Date.parse(s))?new Intl.DateTimeFormat(lang==='am'?'am-ET-u-ca-gregory':'en-GB',{timeZone:'Africa/Addis_Ababa',dateStyle:'medium',timeStyle:'short'}).format(new Date(s)):'—';}
 const photo=p=>typeof p==='string'&&/^data:image\/(png|jpe?g|gif|webp|bmp|avif|heic|heif);base64,[A-Za-z0-9+/=]+$/i.test(p)?p:'./icons/icon-192.png';
 function fileData(file){return new Promise((resolve,reject)=>{if(!file)return resolve(null);if(file.size>2*1024*1024)return reject(Error('fileInvalid'));const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=()=>reject(Error('fileInvalid'));r.readAsDataURL(file);});}
-function assignment(select,depId){const dep=roleDepartments[val(select)];if(dep)set(depId,dep);$(depId).disabled=!!dep;}
+function assignment(select,depId){const selectedRole=val(select),dep=roleDepartments[selectedRole],isCenter=['center_senior_leader','center_leader','center_department_leader','potential_center_leader','potential_department_leader','volunteer'].includes(selectedRole);for(const opt of $(depId).options){const exclude=isCenter&&['Monday Staff Program','International','Prayer'].includes(opt.value);opt.hidden=exclude;opt.disabled=exclude;}if($(depId).selectedOptions[0]?.disabled)$(depId).selectedIndex=Array.from($(depId).options).findIndex(o=>!o.disabled);if(dep)set(depId,dep);$(depId).disabled=!!dep;}
 function notification(key,isError=false){
  const k=key==='pending'?'pendingLogin':key==='removed'?'removedLogin':key;
  if($('app').classList.contains('hide')){$('authMsg').textContent=t(k);$('authMsg').classList.toggle('ok',!isError);return;}
@@ -231,7 +232,7 @@ function notification(key,isError=false){
 }
 function forgetEdits(){editReport=editPlan=editProfile=null;for(const k of Object.keys(edits))delete edits[k];}
 function signedOut(){
- view=null;forgetEdits();store.clearSession();vis('app',false);vis('auth',true);vis('feedback',false);
+ view=null;syncMondayAccess();forgetEdits();store.clearSession();vis('app',false);vis('auth',true);vis('feedback',false);
  window.dispatchEvent(new Event('gaius:nexus-session-cleared'));
  // Clear rendered private content and fields before another account uses the same tab.
  for(const id of ['adminUsers','auditList','queue','reportList','recent','planList','docList','peopleList','profileFields','attendanceList','annList','projectList'])$(id).replaceChildren();
@@ -245,7 +246,7 @@ function signedOut(){
 async function info(){const result=await store.info();bootstrap=result.bootstrap;emailRecovery=result.emailRecovery===true;authText();}
 async function refresh(){
  const next=await store.state(); if(next.onboarding){if(!view?.onboarding){view=next;onboarding();}else view=next;return;}
- const first=!view||view.onboarding;view=next;
+ const first=!view||view.onboarding;view=next;syncMondayAccess();
  if(first){vis('auth',false);vis('app',true);forgetEdits();defaults();tab=seesReports(current())?'dashboard':isMondayParticipant(current())?'attendance':'profilePage';}
  renderAll();
  // UI-only notification: no credentials or organizational data leave the browser.
@@ -394,7 +395,8 @@ function defaults(){
 }
 function allowPage(id){
  if(!current()||view.onboarding)return false;
- if(['attendance','workspace'].includes(id)&&!isMondayParticipant(current()))return false;
+ if(id==='attendance'&&!isMondayParticipant(current()))return false;
+ if(id==='workspace'&&!isMondayParticipant(current()))return false;
  // Unassigned staff use Monday staff workspace, attendance, and own profile only.
  if(!full(current())&&!seesReports(current())&&!permit(current(),'manage_users'))
    return ['workspace','attendance','profilePage'].includes(id);
@@ -534,7 +536,8 @@ for(const id of ['search','monthFilter','deptFilter','reviewFilter'])$(id).oninp
 for(const id of ['period','dashMonth','dashYear'])$(id).oninput=renderDashboard;
 
 
-const people=()=>[...seedPeople,...view.directory].filter(isMondayParticipant);
+const people=()=>[...new Map([...seedPeople,...view.directory].map(p=>[p.id,p])).values()].filter(p=>view.directory.some(u=>u.id===p.id)||isMondayParticipant(current()));
+const mondayRoster=()=>people().filter(isMondayParticipant);
 function expected(p,date,type){
  if(!p)return false;
  const name=(p.name||'').toLowerCase().trim().split(/\s+/)[0];
@@ -549,7 +552,8 @@ function entityButtons(bucket,r,editable){
  return `<div class="actions">${editable?button('edit-record','edit',{bucket,id:r.id}):''}${full(current())?button('delete-record','delete',{bucket,id:r.id,version:version(r)}):''}</div>`;
 }
 function renderAttendance(){
- const roster=people(),sel=val('attPerson'),editing=edits.attendance&&view.attendance.find(r=>r.id===edits.attendance.id);
+ if(!syncMondayAccess())return;
+ const roster=mondayRoster(),sel=val('attPerson'),editing=edits.attendance&&view.attendance.find(r=>r.id===edits.attendance.id);
  const entries=roster.map(p=>[p.id,p.name]);
  if(editing&&!entries.some(([id])=>id===editing.personId))entries.push([editing.personId,memberName(editing.personId)]);
  selectOptions('attPerson',entries,sel||entries[0]?.[0]);
@@ -642,7 +646,8 @@ function renderCatalogs(){
 }
 function summary(p){
  const att=view.attendance.filter(a=>a.personId===p.id),pr=view.projects.filter(r=>r.owner===p.id);
- const parts=[role(p.role),dept(p.department),p.profession,`${t('present')} ${att.filter(r=>r.status==='present').length}`,`${t('permitted')} ${att.filter(r=>r.status==='permitted').length}`,`${t('projects')} ${pr.length}`];
+ const parts=[role(p.role),dept(p.department),p.profession,`${t('projects')} ${pr.length}`];
+ if(isMondayParticipant(current())&&isMondayParticipant(p))parts.push(`${t('present')} ${att.filter(r=>r.status==='present').length}`,`${t('permitted')} ${att.filter(r=>r.status==='permitted').length}`);
  if(seesReports(current()))parts.push(`${t('reports')} ${view.reports.filter(r=>r.userId===p.id).length}`);
  return parts.filter(Boolean).join(' · ');
 }
@@ -734,7 +739,7 @@ function auditLabel(action){
  return [t(ent[k]||k),t(verbs[v]||v)].join(' · ');
 }
 on('toggleAdd',()=>{const opening=$('addForm').classList.contains('hide');vis('addForm',opening);if(opening)$('addName').focus();});
-on('addUser',()=>mutate('account.add',{name:val('addName'),username:val('addUsername'),role:val('addRole'),department:val('addDept'),password:val('addPassword')},()=>{for(const id of ['addName','addUsername','addPassword'])set(id,'');vis('addForm',false);set('userFilter','');set('userSearch','');}));
+on('addUser',()=>mutate('account.add',{name:val('addName'),username:val('addUsername'),role:val('addRole'),department:val('addDept'),center:val('addCenter'),password:val('addPassword')},()=>{for(const id of ['addName','addUsername','addPassword'])set(id,'');vis('addForm',false);set('userFilter','');set('userSearch','');}));
 on('transferAdmin',async()=>{
  if(!$('transferConfirm').checked)throw Error('confirmGrant');
  const u=view.users.find(x=>x.id===val('successorUser'));if(!u)throw Error('required');
@@ -748,7 +753,8 @@ on('exportData',async()=>{
 });
 $('userSearch').oninput=renderAdmin;$('userFilter').onchange=renderAdmin;
 function renderAll(){
- const u=current();if(!u||view.onboarding)return;
+ const u=current();syncMondayAccess();if(!u||view.onboarding)return;
+ navigate(tab,false);
  $('who').textContent=u.name+' · '+role(u.role)+(full(u)?' · '+t('fullAdmin'):'');$('miniPhoto').src=photo(u.photo);
  selectOptions('reportStatus',reportOptions(),'submitted');
  renderDashboard();renderReports();renderPlans();if(isMondayParticipant(u))renderAttendance();else{for(const id of ['attendanceList','attendanceSummary','batchRows'])$(id).replaceChildren();}renderCatalogs();renderPeople();renderAdmin();navigate(tab,false);
@@ -833,7 +839,7 @@ async function start(){
    // server-governed v10 pages or confidential backend records.
    let marker=null;try{marker=JSON.parse(sessionStorage.getItem('gaius.v11.offlineIdentity')||'null');}catch{}
    if(marker?.me&&Date.now()-marker.at<86400000){
-    vis('auth',false);vis('app',true);
+    $('app').dataset.mondayAccess='no';vis('auth',false);vis('app',true);
     setTimeout(()=>{const launcher=document.getElementById('v11launch');if(launcher)launcher.click();},50);
     return;
    }
