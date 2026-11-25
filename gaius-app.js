@@ -414,17 +414,17 @@ function defaults(){
  assignment('addRole','addDept');
 }
 function allowPage(id){
- if(!current()||view.onboarding)return false;
- if(id==='attendance'&&!isMondayParticipant(current()))return false;
- if(id==='workspace'&&!isMondayParticipant(current()))return false;
- // Unassigned staff use Monday staff workspace, attendance, and own profile only.
- if(!full(current())&&!seesReports(current())&&!permit(current(),'manage_users'))
-   return ['workspace','attendance','profilePage'].includes(id);
- if(['dashboard','reports'].includes(id))return seesReports(current());
- if(id==='reportEntry')return writesReports(current());
- if(id==='documents')return permit(current(),'documents');
- if(id==='admin')return permit(current(),'manage_users');
- return true;
+ const u=current();if(!u||view.onboarding)return false;
+ if(id==='profilePage')return true;
+ if(isCenterAccount(u))return false; // center operations use the dedicated scoped Nexus navigation.
+ if(id==='attendance'||id==='workspace')return isMondayParticipant(u);
+ if(id==='dashboard'||id==='reports'||id==='plans')return seesReports(u);
+ if(id==='reportEntry')return writesReports(u);
+ if(id==='documents')return permit(u,'documents');
+ if(id==='admin')return permit(u,'manage_users');
+ if(id==='board')return seesReports(u)||publishes(u);
+ if(id==='directory')return seesReports(u)||permit(u,'manage_users');
+ return false;
 }
 function navigate(id,scroll=true){
  tab=allowPage(id)?id:(isMondayParticipant(current())?'attendance':'profilePage');
@@ -659,6 +659,7 @@ document.querySelectorAll('.cancelRecord').forEach(b=>b.onclick=()=>clearCatalog
 function renderCatalogs(){
  const u=current();
  vis(document.querySelector('#board .publisher'),publishes(u));
+ vis($('saveProject').closest('.card'),full(u)||permit(u,'projects'));
  $('annList').innerHTML=view.announcements.slice().reverse().map(r=>`<div class="item"><b>${h(r.title)}</b><div class="reporttext">${h(r.body)}</div>${attachmentLink(r.file)}<div class="muted">${h(r.author)} · ${h(dateTime(r.createdAt))}</div>${entityButtons('announcements',r,permit(u,'announcements'))}</div>`).join('')||empty();
  const owner=val('proOwner');selectOptions('proOwner',people().map(p=>[p.id,p.name]),owner||people()[0]?.id);
  $('projectList').innerHTML=view.projects.map(r=>`<div class="item"><b>${h(r.title)}</b><div class="reporttext">${h(r.body)}</div><div class="muted">${h(t('owner'))} · ${h(memberName(r.owner))} · ${h(r.due)}</div>${attachmentLink(r.file)}${button('project-plan','planForProject',{id:r.id})}${entityButtons('projects',r,permit(u,'projects'))}</div>`).join('')||empty();
