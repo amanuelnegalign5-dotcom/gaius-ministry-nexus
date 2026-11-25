@@ -17,7 +17,7 @@ export function checkReleaseAssets(){
  const marker=sw.match(/const cacheName=prefix\+'([^']+)'/);
  assert.ok(marker,'Service worker cache release marker is missing');
  assert.ok(marker[1].startsWith(version+'-'),`PWA cache ${marker[1]} must be rotated on app release ${version}`);
- for(const filename of ['gaius-v11.css','gaius-brand.css','gaius-v11-ui.js']){
+ for(const filename of ['gaius-v11.css','gaius-brand.css','gaius-v11-ui.js','gaius-appearance-help.js']){
   const rx=new RegExp(escapeRegExp(filename)+'\\?v=([^"\\s<>]+)');
   const matched=html.match(rx);
   assert.ok(matched,`index.html must version ${filename}`);

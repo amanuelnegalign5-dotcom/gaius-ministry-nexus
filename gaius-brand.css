@@ -42,3 +42,30 @@
   .v11logo{width:60px;height:60px}
   .v11previewFrame{min-height:58vh}
 }
+
+/* User-selected appearance. The official logo retains its original white background. */
+:root{color-scheme:light;--help-surface:#fff;--help-border:#d9e4df}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#101c19;--card:#192a25;--ink:#e7f1ec;--muted:#b1c6bb;--line:#3b554a;--nav:#a6dec0;--teal:#8dd8b4;--green:#93ce75;--red:#ff9f96;--gold:#f2c97b;--shadow:0 8px 24px #0004;--help-surface:#192a25;--help-border:#3b554a}
+[data-theme="dark"] #auth,[data-theme="dark"] .v11root{background:var(--bg);color:var(--ink)}
+[data-theme="dark"] #auth .login,[data-theme="dark"] .card,[data-theme="dark"] .v11box,[data-theme="dark"] .v11tile,[data-theme="dark"] .v11record{background:var(--card);border-color:var(--line);color:var(--ink)}
+[data-theme="dark"] .bar,[data-theme="dark"] .v11nav{background:#101c19f5;border-color:var(--line)}
+[data-theme="dark"] #auth .login h1,[data-theme="dark"] .v11top h1,[data-theme="dark"] .v11box h2,[data-theme="dark"] .v11record h3,[data-theme="dark"] .v11tile strong,[data-theme="dark"] .v11content summary,[data-theme="dark"] .nexusbarlabel{color:var(--nav)}
+[data-theme="dark"] .v11top p,[data-theme="dark"] .v11tile span,[data-theme="dark"] .v11tile small,[data-theme="dark"] .v11muted,[data-theme="dark"] .nexuslegend,[data-theme="dark"] .v11pickerHelp,[data-theme="dark"] .v11pickerStatus{color:var(--muted)}
+[data-theme="dark"] input,[data-theme="dark"] select,[data-theme="dark"] textarea,[data-theme="dark"] .v11field input,[data-theme="dark"] .v11field select,[data-theme="dark"] .v11field textarea,[data-theme="dark"] .v11pickerInput{background:#12221c;color:var(--ink);border-color:var(--line)}
+[data-theme="dark"] .ghost,[data-theme="dark"] .v11nav button,[data-theme="dark"] .v11actions button,[data-theme="dark"] .v11record button,[data-theme="dark"] .nexusaction{background:#20382e;color:var(--ink);border-color:var(--line)}
+[data-theme="dark"] .btn:not(.ghost),[data-theme="dark"] .tabs .on,[data-theme="dark"] .v11nav button.on{background:#287b58;color:#fff}
+[data-theme="dark"] .btn.danger{background:#a32b29;color:white}
+[data-theme="dark"] .v11actions button:hover,[data-theme="dark"] .v11record button:hover,[data-theme="dark"] .nexusaction:hover{background:#304f40}
+[data-theme="dark"] .notice,[data-theme="dark"] .feedback,[data-theme="dark"] .v11guide,[data-theme="dark"] .v11notice,[data-theme="dark"] .v11status,[data-theme="dark"] .v11record .v11status,[data-theme="dark"] .v11top h1 small,[data-theme="dark"] #app.nexus-mode #v11launch{background:#213e32;color:#b9e8ce;border-color:#527962}
+[data-theme="dark"] .privacy,[data-theme="dark"] .v11fulltext,[data-theme="dark"] .v11picker,[data-theme="dark"] .v11grants,[data-theme="dark"] .nexusbartrack{background:#13251e;color:var(--ink);border-color:var(--line)}
+[data-theme="dark"] .v11original,[data-theme="dark"] .v11extras,[data-theme="dark"] .v11previewFrame{border-color:var(--line)}
+[data-theme="dark"] .v11pickerLabel{color:var(--nav)!important}
+[data-theme="dark"] .docwarn,[data-theme="dark"] .state{background:#49381d;color:#f7d68c}
+[data-theme="dark"] .state.approved,[data-theme="dark"] .state.active,[data-theme="dark"] .state.locked{background:#254d35;color:#c2edca}
+[data-theme="dark"] .feedback.error,[data-theme="dark"] .v11notice.v11error,[data-theme="dark"] .dangerNotice,[data-theme="dark"] .state.removed,[data-theme="dark"] .state.revision_requested{background:#492b29;color:#ffc6be;border-color:#ac6d62}
+[data-theme="dark"] .permanentDeleteEditor>summary,[data-theme="dark"] .v11pickerStatus.v11pickerError{color:#ffb1a8}
+.appearance-tools{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.appearance-tools select{width:auto;max-width:140px;min-height:39px}.appearance-tools button{min-height:39px}
+#nexusHelp{width:min(690px,calc(100% - 24px));max-height:85dvh;overflow:auto;border:1px solid var(--help-border);border-radius:16px;background:var(--help-surface);color:var(--ink);padding:18px;box-shadow:var(--shadow)}
+#nexusHelp::backdrop{background:#071510a8}#nexusHelp h2{font-size:1.25rem;color:var(--nav)}#nexusHelp h3{margin:14px 0 4px;font-size:1rem;color:var(--nav)}#nexusHelp p{margin:4px 0 10px}#nexusHelp ul{padding-inline-start:22px}#nexusHelp li{margin:7px 0}#nexusHelp .helphead{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}#nexusHelp .helpsection{border-top:1px solid var(--line);padding-top:10px;margin-top:10px}#nexusHelp .helpcurrent{padding:10px;background:var(--bg);border-radius:10px}#nexusHelp .helplink{font:inherit;border:0;background:none;color:var(--teal);text-decoration:underline;text-align:start;padding:2px;cursor:pointer}
+[data-theme="dark"] #nexusHelp .helplink{color:var(--nav)}
+@media(max-width:600px){#nexusHelp{padding:12px}.appearance-tools select{max-width:110px}.appearance-tools button{padding:7px 9px}}
