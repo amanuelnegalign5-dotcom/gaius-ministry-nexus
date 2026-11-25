@@ -67,13 +67,16 @@ test('extended workspace restores director navigation, reads cached records and 
  const api='https://gaius-nexus-api.amanuelnegalign135.workers.dev';
  const me={id:'director-offline',name:'Synthetic director',username:'director-offline',role:'country_director',accountStatus:'active',adminPermissions:[],_v:1};
  const record={id:'report-one',kind:'monthly',scopeType:'hq',scopeId:'Media',ownerId:me.id,ownerName:me.name,status:'draft',_v:4,data:{title:'Cached authorized report',month:'2026-11',activity:'Training',result:'Initial result'},actions:{edit:true,submit:true}};
- const snapshot={me,authorization:{legacyPages:['dashboard','reports'],offlineMondayRoster:[]},directory:[me],former:[],users:[],reports:[],plans:[],reviews:[],comments:[],attendance:[],projects:[],announcements:[],documents:[],audit:[],v11:{records:[record],files:[],capabilities:{director:true,oversight:true,allowedKinds:['monthly'],readableKinds:['monthly','manuals'],createScopes:{monthly:[{scopeType:'hq',scopeId:'Media'}]},defaultScopeType:'organization',defaultScopeId:'org',canUploadFile:true,hqReports:true}},services:{mediaUploads:true,maxFileBytes:1048576}};
+ const fileBody='%PDF-1.4\nSynthetic classified document';
+ const file={id:'approved-manual',name:'Approved manual.pdf',type:'application/pdf',size:new TextEncoder().encode(fileBody).length,status:'approved',scopeType:'organization',scopeId:'org',offlineEligible:true,offlineAllowed:true,createdAt:'2026-11-25T00:00:00.000Z',updatedAt:'2026-11-25T00:00:00.000Z'};
+ const snapshot={me,authorization:{legacyPages:['dashboard','reports'],offlineMondayRoster:[]},directory:[me],former:[],users:[],reports:[],plans:[],reviews:[],comments:[],attendance:[],projects:[],announcements:[],documents:[],audit:[],v11:{records:[record],files:[file],capabilities:{director:true,oversight:true,allowedKinds:['monthly'],readableKinds:['monthly','manuals'],createScopes:{monthly:[{scopeType:'hq',scopeId:'Media'}]},defaultScopeType:'organization',defaultScopeId:'org',canUploadFile:true,hqReports:true}},services:{mediaUploads:true,maxFileBytes:1048576}};
  let writes=[];
  await context.route(api+'/**',async route=>{
   const path=new URL(route.request().url()).pathname,headers={'access-control-allow-origin':'*','access-control-allow-headers':'authorization,content-type','access-control-allow-methods':'POST,OPTIONS'};
   if(route.request().method()==='OPTIONS')return route.fulfill({status:204,headers});
   if(path.endsWith('/info'))return route.fulfill({json:{bootstrap:false,emailRecovery:false},headers});
   if(path.endsWith('/state'))return route.fulfill({json:snapshot,headers});
+  if(path.endsWith('/file/download'))return route.fulfill({status:200,body:fileBody,headers:{...headers,'content-type':'application/pdf'}});
   if(path.endsWith('/command')){const data=route.request().postDataJSON();if(data.action==='v11.save'){writes.push(data);return route.fulfill({status:409,json:{error:'conflict'},headers});}}
   return route.fulfill({status:400,json:{error:'unknown'},headers});
  });
@@ -88,7 +91,13 @@ test('extended workspace restores director navigation, reads cached records and 
  page.once('dialog',d=>d.accept());
  await page.locator('#gaiusV11 [data-v="extended"]').click();
  await expect(page.locator('#gaiusV11 [data-v="extended"]')).toContainText('Disable extended workspace');
+ await page.locator('#gaiusV11 .v11nav [data-section="files"]').click();
+ await page.locator('#gaiusV11 [data-v="cacheFile"][data-id="approved-manual"]').click();
+ await expect(page.locator('#v11notice')).toContainText('Encrypted offline copy saved');
  await context.setOffline(true);
+ await page.locator('#gaiusV11 .v11nav [data-section="files"]').click();
+ await expect(page.locator('#gaiusV11')).toContainText('Approved manual.pdf');
+ expect(await page.evaluate(async()=>{const v=await import('./gaius-offline-vault.js');return (await v.readCachedFile('director-offline','approved-manual')).blob.text();})).toBe(fileBody);
  await page.locator('#gaiusV11 .v11nav [data-section="director"]').click();
  await expect(page.locator('#gaiusV11 .v11nav [data-section="director"]')).toHaveClass('on');
  await page.locator('#gaiusV11 .v11nav [data-section="analytics"]').click();
@@ -110,4 +119,7 @@ test('extended workspace restores director navigation, reads cached records and 
  expect(writes[0].payload.data.result).toBe('Edited offline');
  await expect(page.locator('#gaiusV11')).toContainText('conflict');
  await expect(page.locator('#gaiusV11 [data-v="dropEncrypted"]')).toHaveCount(1);
+ file.offlineAllowed=false;file.updatedAt='2026-11-26T00:00:00.000Z';
+ await page.locator('#gaiusV11 [data-v="sync"]').click();
+ await expect.poll(async()=>page.evaluate(async()=>{const v=await import('./gaius-offline-vault.js');return (await v.cachedFiles('director-offline')).length;})).toBe(0);
 });
