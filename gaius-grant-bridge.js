@@ -1,4 +1,4 @@
-import {eligibleDelegate,classifiedGrant,roleClass} from './gaius-report-policy.js';
+import {eligibleGrantRecipient,classifiedGrant,roleClass} from './gaius-report-policy.js';
 // Shared scoped grant evaluator. Each evaluation is built from current server data,
 // never from client-submitted roles or cached authorizations.
 const active=u=>!!u?.id&&(u.accountStatus||'active')==='active'&&!u.onboarding;
@@ -9,7 +9,7 @@ export function grantContext(db,u,now=Date.now()){
  const centers=db.all('governance_records').filter(r=>r.kind==='center'&&r.status!=='archived');
  const resolve=key=>{const direct=centers.find(r=>r.id===key);if(direct)return direct;const matches=centers.filter(r=>r.name===key||[r.direction,r.name].filter(Boolean).join(' — ')===key);return matches.length===1?matches[0]:null;};
  const own=resolve(u?.center);
- const grants=eligibleDelegate(u)?db.all('governance_grants').filter(g=>{
+ const grants=eligibleGrantRecipient(u)?db.all('governance_grants').filter(g=>{
   if(g.recipientId!==u.id||!classifiedGrant(u,g.modules,g.actions)||g.status!=='active'||g.revokedAt||!['permission','delegation'].includes(g.type))return false;
   const issuer=db.one('users',g.issuerId);if(!active(issuer)||!directors.includes(issuer.role))return false;
   if(g.type==='delegation'&&(!g.startsAt||!g.endsAt))return false;
