@@ -290,7 +290,7 @@ export function v11State(db,u){
  const scopeType=isDirector(u)?'organization':centerReader(u)?'center':hqLeader(u)?'hq':'personal';
  const scopeId=scopeType==='center'?u.center:scopeType==='hq'?u.department:scopeType==='personal'?u.id:'org';
  const ctx=grantContext(db,u);
- const candidates=[{scopeType,scopeId},...(!isCenterAccount(u)?[{scopeType:'organization',scopeId:'org'},...Object.values(hqDepartmentAliases).map(a=>({scopeType:'hq',scopeId:a[0]}))]:[]),...ctx.centers.filter(c=>!isCenterAccount(u)||ctx.own?.id===c.id).map(c=>({scopeType:'center',scopeId:ctx.own?.id===c.id?u.center:c.id,label:[c.direction,c.name].filter(Boolean).join(' — ')}))].filter(x=>x.scopeId);
+ const candidates=[{scopeType,scopeId},{scopeType:'personal',scopeId:u.id},...(!isCenterAccount(u)?[{scopeType:'organization',scopeId:'org'},...Object.values(hqDepartmentAliases).map(a=>({scopeType:'hq',scopeId:a[0]}))]:[]),...ctx.centers.filter(c=>!isCenterAccount(u)||ctx.own?.id===c.id).map(c=>({scopeType:'center',scopeId:ctx.own?.id===c.id?u.center:c.id,label:[c.direction,c.name].filter(Boolean).join(' — ')}))].filter(x=>x.scopeId);
  const createScopes=Object.fromEntries(V11_KINDS_LIST.map(k=>[k,candidates.filter((x,i,a)=>a.findIndex(y=>y.scopeType===x.scopeType&&y.scopeId===x.scopeId)===i&&canCreate(u,k,x.scopeType,x.scopeId,ctx))]));
  const allowedKinds=isDirector(u)?V11_KINDS_LIST.filter(k=>!!V11_KINDS[k]):V11_KINDS_LIST.filter(k=>createScopes[k].length);
  const visible=db.all('v11_records').filter(r=>canRead(u,r,db,ctx));
