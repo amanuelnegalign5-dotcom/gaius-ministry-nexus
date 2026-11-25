@@ -1,5 +1,5 @@
 import * as store from './gaius-store.js';
-import { roleDepartments, directors, permissions, seedPeople, stateOf, full, permit, seesReports, writesReports, managesAttendance, publishes, canManage, flow, version } from './gaius-core.js';
+import { roleDepartments, directors, staffViews, staffViewOverride, permissions, seedPeople, stateOf, full, permit, seesReports, writesReports, mondayMember, managesAttendance, publishes, canManage, flow, version } from './gaius-core.js';
 
 const $=id=>document.getElementById(id);
 const base=window.GAIUS_V10;
@@ -201,7 +201,7 @@ const roleText={
  admin_finance:['የአስተዳደርና ፋይናንስ ክፍል ኃላፊ','Administration and Finance HQ Leader'],monday_leader:['የሰኞ ፕሮግራም ኃላፊ','Monday Staff Program Leader'],
  country_director:['የሀገር ውስጥ ዳይሬክተር','Country Director'],international_director:['ዓለም አቀፍ ዳይሬክተር','International Director'],
  international_staff:['ዓለም አቀፍ ሠራተኛ','International Staff'],assisting_staff:['ረዳት ሠራተኛ','Assisting Staff'],prayer_staff:['የጸሎት አገልጋይ','Prayer Staff'],staff:['ሠራተኛ','Staff'],
- center_leader:['የማዕከል መሪ','Center Leader'], potential_center_leader:['እጩ የማዕከል መሪ','Potential Center Leader'],
+ senior_center_leader:['ከፍተኛ የማዕከል መሪ','Senior Center Leader'],center_leader:['የማዕከል መሪ','Center Leader'], potential_center_leader:['እጩ የማዕከል መሪ','Potential Center Leader'],
  center_department_leader:['የማዕከል ክፍል መሪ','Center Department Leader'],potential_department_leader:['እጩ የክፍል መሪ','Potential Department Leader'],
  volunteer:['በጎ ፈቃደኛ','Volunteer'],hq_staff:['የHQ ሠራተኛ','HQ Staff']
 };
@@ -350,10 +350,10 @@ on('finishReset',async()=>{
 on('loginTab',async()=>{if(mode==='complete'){try{await store.logout();}finally{signedOut();}return;}setMode('login');});
 on('registerTab',async()=>{await info();setMode('register');});
 on('logout',async()=>{try{await store.logout();}finally{signedOut();}await info();});
-const centerRegistrationRoles=new Set(['center_leader','potential_center_leader','center_department_leader','potential_department_leader','volunteer']);
+const centerRegistrationRoles=new Set(['senior_center_leader','center_leader','potential_center_leader','center_department_leader','potential_department_leader','volunteer']);
 function requiredCenterInput(){const isCenter=centerRegistrationRoles.has(val('regRole'));
  $('regCenter').required=isCenter;$('regCenterStar').textContent=isCenter?'*':'';
- if(['center_leader','potential_center_leader','volunteer'].includes(val('regRole')))$('regDept').required=false;
+ if(['senior_center_leader','potential_center_leader','volunteer'].includes(val('regRole')))$('regDept').required=false;
  else $('regDept').required=true;
  if(directors.includes(val('regRole'))){$('regDept').required=false;set('regDept','');}
  $('regDeptStar').textContent=$('regDept').required?'*':'';
@@ -394,8 +394,11 @@ function defaults(){
 }
 function allowPage(id){
  if(!current()||view.onboarding)return false;
+ if(['workspace','attendance'].includes(id)&&!mondayMember(current()))return false;
+ const override=staffViewOverride(current(),id);
+ if(override!=='default')return override==='allow';
  // Unassigned staff use Monday staff workspace, attendance, and own profile only.
- if(!full(current())&&!seesReports(current())&&!permit(current(),'manage_users'))
+ if(!full(current())&&!writesReports(current())&&!permit(current(),'manage_users')&&!(seesReports(current())&&['dashboard','reports','plans'].includes(id)))
    return ['workspace','attendance','profilePage'].includes(id);
  if(['dashboard','reports'].includes(id))return seesReports(current());
  if(id==='reportEntry')return writesReports(current());
@@ -404,7 +407,7 @@ function allowPage(id){
  return true;
 }
 function navigate(id,scroll=true){
- tab=allowPage(id)?id:'attendance';
+ tab=allowPage(id)?id:allowPage('attendance')?'attendance':'profilePage';
  document.querySelectorAll('.page').forEach(p=>p.classList.toggle('on',p.id===tab));
  document.querySelectorAll('.nav').forEach(n=>{const on=n.dataset.page===tab;vis(n,allowPage(n.dataset.page));n.classList.toggle('on',on);n.classList.toggle('ghost',!on);if(on)n.setAttribute('aria-current','page');else n.removeAttribute('aria-current');});
  vis('auditPanel',tab==='admin'&&full(current()));
@@ -548,7 +551,7 @@ function entityButtons(bucket,r,editable){
  return `<div class="actions">${editable?button('edit-record','edit',{bucket,id:r.id}):''}${full(current())?button('delete-record','delete',{bucket,id:r.id,version:version(r)}):''}</div>`;
 }
 function renderAttendance(){
- const roster=people(),sel=val('attPerson'),editing=edits.attendance&&view.attendance.find(r=>r.id===edits.attendance.id);
+ const roster=people().filter(mondayMember),sel=val('attPerson'),editing=edits.attendance&&view.attendance.find(r=>r.id===edits.attendance.id);
  const entries=roster.map(p=>[p.id,p.name]);
  if(editing&&!entries.some(([id])=>id===editing.personId))entries.push([editing.personId,memberName(editing.personId)]);
  selectOptions('attPerson',entries,sel||entries[0]?.[0]);
@@ -702,6 +705,9 @@ function userAccessEditor(u){
  if(!full(current())||stateOf(u)!=='active')return '';
  return `<details class="accessEditor"><summary>${h(t('permissions'))}</summary><label>${h(t('role'))}<select data-role>${options(Object.keys(roleDepartments).map(k=>[k,role(k)]),u.role)}</select></label><label>${h(t('department'))}<select data-department>${options(Object.keys(departments).map(k=>[k,dept(k)]),u.department)}</select></label>
  <label>Center / ማዕከል<input data-center value="${h(u.center||'')}" placeholder="Center"></label>
+ <fieldset><legend>የHQ ሠራተኛ ገጾች / HQ staff views</legend>${staffViews.map(page=>`<label>${h(t(page))}<select data-staff-view="${page}">${options([['default','በሚናው መሠረት / Default'],['allow','ፍቀድ / Allow'],['deny','ከልክል / Deny']],u.staffViews?.[page]||'default')}</select></label>`).join('')}</fieldset>
+ <label>የHQ ዕቅድና ሪፖርት እይታ / HQ reporting view<select data-hq-view>${options([['default','በሚናው መሠረት / Role default'],['allow','ፍቀድ / Allow'],['deny','ከልክል / Deny']],u.hqReportingView||'default')}</select></label>
+ <label>እንዲያይ የተፈቀዱ ማዕከላት / Additional centers for submitted and approved plans and reports<input data-center-views value="${h((u.centerReportViews||[]).join(', '))}" placeholder="Gerji, Mekanisa"></label>
  <label class="checkLine"><input type="checkbox" data-full ${u.fullAdmin?'checked':''}> ${h(t('fullAdmin'))}</label><div class="actions">${permissions.map(p=>`<label class="perm pill"><input type="checkbox" data-permission="${p}" ${(u.adminPermissions||[]).includes(p)?'checked':''}>${h(t(p))}</label>`).join('')}</div><div class="actions">${button('access','save')}</div></details>`;
 }
 function renderAdmin(){
@@ -733,7 +739,7 @@ function auditLabel(action){
  return [t(ent[k]||k),t(verbs[v]||v)].join(' · ');
 }
 on('toggleAdd',()=>{const opening=$('addForm').classList.contains('hide');vis('addForm',opening);if(opening)$('addName').focus();});
-on('addUser',()=>mutate('account.add',{name:val('addName'),username:val('addUsername'),role:val('addRole'),department:val('addDept'),password:val('addPassword')},()=>{for(const id of ['addName','addUsername','addPassword'])set(id,'');vis('addForm',false);set('userFilter','');set('userSearch','');}));
+on('addUser',()=>mutate('account.add',{name:val('addName'),username:val('addUsername'),role:val('addRole'),department:val('addDept'),center:val('addCenter'),password:val('addPassword')},()=>{for(const id of ['addName','addUsername','addPassword','addCenter'])set(id,'');vis('addForm',false);set('userFilter','');set('userSearch','');}));
 on('transferAdmin',async()=>{
  if(!$('transferConfirm').checked)throw Error('confirmGrant');
  const u=view.users.find(x=>x.id===val('successorUser'));if(!u)throw Error('required');
@@ -800,6 +806,7 @@ document.addEventListener('click',e=>{
   }
   if(a.startsWith('account.')){if(a!=='account.remove'||confirm(t('confirmRemove')))await mutate(a,userRef);return;}
   if(a==='access'){await mutate('account.access',{...userRef,role:user.querySelector('[data-role]').value,department:user.querySelector('[data-department]').value,center:user.querySelector('[data-center]').value,
+     staffViews:Object.fromEntries([...user.querySelectorAll('[data-staff-view]')].map(el=>[el.dataset.staffView,el.value])),hqReportingView:user.querySelector('[data-hq-view]').value,centerReportViews:user.querySelector('[data-center-views]').value.split(',').map(s=>s.trim()).filter(Boolean),
      permissions:[...user.querySelectorAll('[data-permission]:checked')].map(el=>el.dataset.permission),fullAdmin:user.querySelector('[data-full]').checked});return;}
   if(a==='reset'){await mutate('account.reset',{...userRef,password:user.querySelector('[data-reset]').value});return;}
   if(a==='edit-profile'){profileForm(view.users.find(u=>u.id===userRef.id));navigate('profilePage');$('profileEditor').open=true;$('profileEditor').scrollIntoView();return;}
@@ -841,4 +848,5 @@ async function start(){
  }
 }
 start();
+
 

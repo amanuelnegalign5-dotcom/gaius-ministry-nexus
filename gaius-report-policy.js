@@ -19,3 +19,20 @@ export const isHQReporter=u=>!!u&&(u.accountStatus||'active')==='active'&&!u.cen
  hqDepartmentAliases[u.role].some(n=>normalizeUnit(n)===normalizeUnit(u.department));
 export const isDirectorRole=u=>!!u&&(u.accountStatus||'active')==='active'&&
  ['country_director','international_director'].includes(u.role);
+
+
+export const isCenterLeaderRole = role => ['senior_center_leader', 'center_leader', 'potential_center_leader', 'center_department_leader', 'potential_department_leader'].includes(role);
+export const isCenterRole = role => role === 'volunteer' || isCenterLeaderRole(role);
+
+export const isConfirmedCenterLeader = role => ['senior_center_leader','center_leader','center_department_leader'].includes(role);
+export function recordsCenterAttendance(u) {
+ if(u.role==='senior_center_leader')return true;
+ return ['center_leader','center_department_leader'].includes(u.role) &&
+  ['follow-up','c-follow','ክትትል','administration and finance','center administration and finance','c-admin','የአስተዳደር እና ፋይናንስ የአገልግሎት ክፍል','service coordination','c-coord','የአገልግሎት አስተባባሪ'].includes(normalizeUnit(u.department));
+}
+export function seesHQReports(u) {
+ if(isDirectorRole(u))return true;
+ if(!u||(u.accountStatus||'active')!=='active'||isCenterRole(u.role)||u.hqReportingView==='deny')return false;
+ return u.hqReportingView==='allow'||isHQReporter(u);
+}
+export const hasCenterViewGrant = (u,center) => !!center && (u.centerReportViews||[]).some(name=>normalizeUnit(name)===normalizeUnit(center));
