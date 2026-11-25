@@ -1,0 +1,28 @@
+name: Governance branch CI (no deployment)
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [feature/governance-center-lifecycle]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: |
+          node --check gaius-governance-service.js
+          node --check gaius-governance-ui.js
+          node --check gaius-worker.js
+          node --check gaius-core.js
+          node --check gaius-app.js
+          node --check gaius-v11-core.js
+      - name: New governance tests
+        run: node --test tests/governance-foundation.test.mjs tests/governance-service.test.mjs
+      - name: All regression tests
+        run: npm test
