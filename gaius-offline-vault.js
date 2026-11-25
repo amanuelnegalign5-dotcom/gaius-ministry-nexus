@@ -40,14 +40,34 @@ export function draftAllowed(s,p,now=Date.now()){
 const open=()=>new Promise((resolve,reject)=>{const r=indexedDB.open('gaius-encrypted-offline-v1',1);r.onupgradeneeded=()=>r.result.createObjectStore('vault',{keyPath:'id'});r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
 async function transact(mode,work){const db=await open();try{return await new Promise((resolve,reject)=>{const tx=db.transaction('vault',mode),q=work(tx.objectStore('vault'));tx.oncomplete=()=>resolve(q?.result);tx.onabort=tx.onerror=()=>reject(tx.error||Error('Offline storage failed'));});}finally{db.close();}}
 const get=id=>transact('readonly',s=>s.get(id)),put=row=>transact('readwrite',s=>s.put(row)),all=()=>transact('readonly',s=>s.getAll()),drop=id=>transact('readwrite',s=>s.delete(id));
-let unlocked=null,epoch=0;
+let unlocked=null,epoch=0,loginBusy=false;
+const loginTag=async username=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',encoder.encode('gaius-offline-login:'+String(username||'').trim().toLowerCase()))),b=>b.toString(16).padStart(2,'0')).join('');
 export function lockVault(){epoch++;unlocked=null;}
 export function vaultUnlocked(owner){return unlocked?.owner===owner;}
 export async function hasVault(owner){return !!await get('meta:'+owner);}
+export async function offlineLogin(username,passphrase){
+ if(loginBusy)throw Error('offlineLoginBusy');loginBusy=true;
+ try{
+  const tag=await loginTag(username),id='login:'+tag,entry=await get(id),now=Date.now();
+  if((entry?.retryAt||0)>now)throw Error('offlineLoginThrottled');
+  if(!entry?.owner)throw Error('offlineLoginUnavailable');
+  let snapshot;try{snapshot=await unlockVault(entry.owner,passphrase);}catch{
+   const failures=(entry.failures||0)+1;await put({...entry,failures,retryAt:failures>=5?now+Math.min(300000,30000*2**Math.min(4,failures-5)):0});throw Error('offlineLoginInvalid');
+  }
+  if(!snapshotValid(snapshot,entry.owner)){lockVault();throw Error('offlineLoginExpired');}
+  await put({...entry,failures:0,retryAt:0});return snapshot.me;
+ }finally{loginBusy=false;}
+}
+async function enrollLogin(state){
+ const v=unlocked;if(!v||v.owner!==state.me.id||!state.me.username)return;
+ const tag=await loginTag(state.me.username),id='login:'+tag;
+ if(unlocked!==v)return;
+ await put({id,owner:v.owner,failures:0,retryAt:0});
+}
 export async function unlockVault(owner,passphrase,onlineState=null){
  const mark=++epoch;unlocked=null;
  let meta=await get('meta:'+owner);
- if(!meta){if(!onlineState||onlineState.me.id!==owner)throw Error('First enable offline mode online');const salt=bytes(16),key=await deriveKey(passphrase,salt);const snapshot=offlineSnapshot(onlineState);meta={id:'meta:'+owner,salt:Array.from(salt),box:await seal(key,snapshot,'snapshot:'+owner)};if(mark!==epoch)throw Error('Session changed');await put(meta);if(mark!==epoch)throw Error('Session changed');unlocked={owner,key,snapshot};return snapshot;}
+ if(!meta){if(!onlineState||onlineState.me.id!==owner)throw Error('First enable offline mode online');const salt=bytes(16),key=await deriveKey(passphrase,salt);const snapshot=offlineSnapshot(onlineState);meta={id:'meta:'+owner,salt:Array.from(salt),box:await seal(key,snapshot,'snapshot:'+owner)};if(mark!==epoch)throw Error('Session changed');await put(meta);if(mark!==epoch)throw Error('Session changed');unlocked={owner,key,snapshot};await enrollLogin(onlineState);return snapshot;}
  const key=await deriveKey(passphrase,new Uint8Array(meta.salt)),snapshot=await unseal(key,meta.box,'snapshot:'+owner);
  if(mark!==epoch||snapshot.me.id!==owner)throw Error('Session changed');
  unlocked={owner,key,snapshot};
@@ -58,7 +78,7 @@ export async function refreshVault(state){
  const v=unlocked;if(!v||v.owner!==state.me.id)return;
  const meta=await get('meta:'+v.owner),snapshot=offlineSnapshot(state);
  const box=await seal(v.key,snapshot,'snapshot:'+v.owner);
- if(unlocked!==v)return;await put({...meta,box});if(unlocked===v)v.snapshot=snapshot;
+ if(unlocked!==v)return;await put({...meta,box});if(unlocked===v){v.snapshot=snapshot;await enrollLogin(state);}
 }
 export function offlineState(owner){const v=unlocked;if(!v||v.owner!==owner||!snapshotValid(v.snapshot,owner))return null;const s=v.snapshot,createScopes=Object.fromEntries(Object.entries(s.createScopes).filter(([k])=>categoryValid(s,owner,k==='centerAttendance'?'attendance':'operations'))),attendance=categoryValid(s,owner,'attendance');return {me:s.me,directory:[],offlineOnly:true,v11:{records:[],files:[],capabilities:{createScopes,allowedKinds:Object.keys(createScopes),readableKinds:Object.keys(createScopes),attendanceParticipants:attendance?s.participants:[],offlineMondayRoster:attendance?s.mondayRoster||[]:[]}}};}
 export function vaultLease(owner){const v=unlocked;if(v?.owner!==owner)return null;const s=v.snapshot;return {operationsUntil:s.operationsUntil??s.at+MAX_AGE,attendanceUntil:s.attendanceUntil??s.at+MAX_AGE};}
