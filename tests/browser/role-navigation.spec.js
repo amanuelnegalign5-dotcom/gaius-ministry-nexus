@@ -54,7 +54,8 @@ test('director sees center-specific permission controls without false delegated 
  await expect(center.locator('[data-permission="center:attendance"]')).toBeVisible();
  await expect(center.locator('[data-permission="center:review_reports"]')).toBeVisible();
  await expect(center.locator('[data-permission="attendance"]')).toHaveCount(0);
- await expect(center.locator('[data-action="open-delegation"]')).toHaveCount(0);
+ // Current main explicitly allows own-center grants to eligible center accounts.
+ await expect(center.locator('[data-action="open-delegation"]')).toBeVisible();
  await hq.locator('.accessEditor summary').click();
  await expect(hq.locator('[data-action="open-delegation"]')).toBeVisible();
 });
