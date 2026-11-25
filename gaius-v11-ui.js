@@ -89,13 +89,15 @@ launch.onclick=()=>{
 };
 // The Director lands in their Command Center on successful login, without losing
 // any preserved v10 pages. Other roles keep their existing restricted landing pages.
-window.addEventListener('gaius:nexus-session-ready',event=>{
- const identity=event.detail||{};
+function maybeAutoOpen(identity={}){
  if(!identity.id||autoOpenedDirectorId===identity.id)return;
  if(!directorRole(identity.role)&&!['center_senior_leader','center_leader','center_department_leader','potential_center_leader','potential_department_leader'].includes(identity.role))return;
  autoOpenedDirectorId=identity.id;
  void open();
-});
+}
+window.addEventListener('gaius:nexus-session-ready',event=>maybeAutoOpen(event.detail||{}));
+// A fast local or cached session can finish before this module registers its listener.
+if(window.GAIUS_ACTIVE_IDENTITY)queueMicrotask(()=>maybeAutoOpen(window.GAIUS_ACTIVE_IDENTITY||{}));
 window.addEventListener('gaius:nexus-session-cleared',()=>{
  close();root.replaceChildren();state=null;autoOpenedDirectorId=null;section='overview';
 });
