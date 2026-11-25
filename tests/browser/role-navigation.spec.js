@@ -58,3 +58,31 @@ test('director sees center-specific permission controls without false delegated 
  await hq.locator('.accessEditor summary').click();
  await expect(hq.locator('[data-action="open-delegation"]')).toBeVisible();
 });
+
+test('appearance switches on login and persists through reload and system setting',async({page})=>{
+ await page.emulateMedia({colorScheme:'light'});
+ await page.goto('http://127.0.0.1:4173/?workspace=local');
+ const select=page.locator('#auth [data-appearance]');
+ await expect(select).toBeVisible();await select.selectOption('dark');
+ await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
+ await page.reload();await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
+ await select.selectOption('light');await expect(page.locator('html')).toHaveAttribute('data-theme','light');
+ await select.selectOption('system');await page.emulateMedia({colorScheme:'dark'});await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
+ await page.locator('#auth [data-help]').click();await expect(page.locator('#nexusHelp')).toBeVisible();
+ await expect(page.locator('#nexusHelp')).not.toContainText('Delegation & permissions');
+ await page.keyboard.press('Escape');await expect(page.locator('#nexusHelp')).toBeHidden();
+});
+test('center user help lists only authorized navigation and guides center attendance',async({page})=>{
+ await enter(page,'center_leader','Gerji');
+ await page.locator('#app [data-appearance]').selectOption('dark');
+ await page.locator('#app [data-help]').click();
+ await expect(page.locator('#nexusHelp')).toBeVisible();
+ await expect(page.locator('#nexusHelp')).not.toContainText(/Monday attendance|HQ reports|Delegation & permissions/);
+ await page.locator('#nexusHelp').getByRole('button',{name:'Open Nexus workspace'}).click();
+ await page.locator('#gaiusV11 [data-section="records"]').click();
+ await page.locator('#v11Kind').selectOption('centerAttendance');
+ await page.locator('#app [data-help]').click();
+ await expect(page.locator('#nexusHelp')).toContainText('Sunday program plus one weekly meeting');
+ await expect(page.locator('#nexusHelp')).not.toContainText('Monday attendance');
+ await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
+});
