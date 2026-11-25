@@ -31,7 +31,7 @@ function mountGovernance(store, HQ_CHARTERS, CENTER_CHARTERS){
  const targets=record.id?[{centerId:record.centerId||'',region:record.region}]:c.createTargets?.[kind];
  const selectable=targets||[];
  const allowedCenterIds=new Set(selectable.map(t=>t.centerId).filter(Boolean));
- const targetCenters=targets?centerRows().filter(x=>allowedCenterIds.has(x.id)):centerRows();
+ const targetCenters=targets?[...allowedCenterIds].map(id=>centerRows().find(x=>x.id===id)||{id,name:selectable.find(t=>t.centerId===id)?.name||id}):centerRows();
  const regions=targets?[...new Set(selectable.filter(t=>kind==='center'||!t.centerId).map(t=>t.region))]:['country','international'];
  field2('name',tr('ስም','Name'),'text',null,true);
  if(kind==='center'){field2('region',tr('የዳይሬክተር ወሰን','Director region'),regions,v.region||regions[0]||c.region,true);field2('country',tr('ሀገር (ISO code)','Country (ISO code)'),'text',v.country||(c.region==='country'?'ET':''),true);field2('city',tr('ከተማ','City'),'text');field2('direction',tr('አቅጣጫ','Direction'),'text');field2('level',tr('የማዕከል ደረጃ','Center level'),['','A','B','C']);field2('levelReason',tr('የደረጃ ለውጥ ምክንያት','Level change reason'),'text');field2('status','Status',['active','planned','forming','inactive','archived'],v.status||'active',true);}
