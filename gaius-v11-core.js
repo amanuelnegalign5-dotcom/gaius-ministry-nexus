@@ -272,11 +272,15 @@ function filePermissions(db,u,p){
  check(Array.isArray(p?.allowedUserIds)&&p.allowedUserIds.length<=100,'invalidRecipients',400);
  const ids=[...new Set(p.allowedUserIds.map(id=>clean(id,100)))];
  check(ids.every(id=>db.one('users',id)&&active(db.one('users',id))),'invalidRecipients',400);
- const next={...f,allowedUserIds:ids,updatedAt:at()};
+ const next={...f,allowedUserIds:ids,offlineAllowed:false,updatedAt:at()};
  db.put('v11_files',next);audit(db,u,'v11.file.permissions',next);
  return {id:f.id,count:ids.length};
 }
+const OFFLINE_FILE_TYPES=new Set(['application/pdf','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.openxmlformats-officedocument.presentationml.presentation','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/plain','text/csv']);
+export function offlineFileEligible(f){return !!f&&f.status==='approved'&&f.scopeType==='organization'&&f.scopeId==='org'&&OFFLINE_FILE_TYPES.has(f.type)&&Number(f.size)>0&&Number(f.size)<=5*1024*1024;}
+function fileOfflinePolicy(db,u,p){check(active(u)&&isDirector(u),'forbidden');const f=db.one('v11_files',clean(p.id,100));check(f&&f.status!=='removed','missing',404);check(typeof p.enabled==='boolean','invalidTransition',400);check(!p.enabled||offlineFileEligible(f),'offlineFileNotEligible',400);check((f.updatedAt||f.createdAt)===p.version,'conflict',409);const next={...f,offlineAllowed:p.enabled,updatedAt:at()};db.put('v11_files',next);audit(db,u,'v11.file.offlinePolicy',next);return {id:f.id};}
 export function v11Command(db,u,action,p){
+ if(action==='v11.fileOfflinePolicy')return fileOfflinePolicy(db,u,p);
  if(action==='v11.filePermissions')return filePermissions(db,u,p);
  if(action==='v11.importSourceDocs')return importSourceDocs(db,u,p);
  if(action==='v11.importDirectorPlan')return importDirectorPlan(db,u,p);
@@ -300,7 +304,7 @@ export function v11State(db,u){
  const viewKinds=V11_KINDS_LIST.filter(k=>candidates.some(x=>ctx.record({kind:k,...x,status:'submitted'},'view')||ctx.record({kind:k,...x,status:'submitted'},'approve')||ctx.record({kind:k,...x,status:'draft'},'edit')));
  return {v11:{records:visible.map(r=>({...r,delegatedApproval:ctx.record(r,'approve'),centerReview:centerCanReview(u,r),actions:recordActions(db,u,r,ctx)})),
   capabilities:{director:isDirector(u),oversight:isDirector(u),canApprove:granted(u,'v11:approve'),canPublish:granted(u,'v11:publish'),canEditManual:granted(u,'v11:edit_manual'),allowedKinds,createScopes,readableKinds:[...new Set([...allowedKinds,...(centerReader(u)?['centerAttendance','monthly','plans6']:[]),...visible.map(r=>r.kind),...viewKinds])],canUploadFile:isDirector(u)||uploadScopes.length>0,uploadScopes,attendanceParticipants,defaultScopeType:scopeType,defaultScopeId:scopeId,hqReports:isDirectorRole(u)||hqLeader(u)},
-  files:db.all('v11_files').filter(f=>canReadFile(u,f,db,ctx)).map(f=>({actions:{review:canReviewFile(db,u,f,ctx),manageAccess:isDirector(u)},id:f.id,name:f.name,type:f.type,size:f.size,scopeType:f.scopeType,scopeId:f.scopeId,ownerId:f.ownerId,status:f.status,createdAt:f.createdAt,...(isDirector(u)?{allowedUserIds:f.allowedUserIds||[]}:{} )}))}};
+  files:db.all('v11_files').filter(f=>canReadFile(u,f,db,ctx)).map(f=>({actions:{review:canReviewFile(db,u,f,ctx),manageAccess:isDirector(u)},id:f.id,name:f.name,type:f.type,size:f.size,scopeType:f.scopeType,scopeId:f.scopeId,ownerId:f.ownerId,status:f.status,createdAt:f.createdAt,updatedAt:f.updatedAt||f.createdAt,offlineAllowed:offlineFileEligible(f)&&f.offlineAllowed===true,offlineEligible:offlineFileEligible(f),...(isDirector(u)?{allowedUserIds:f.allowedUserIds||[]}:{} )}))}};
 }
 export function canReadFile(u,f,db=null,ctx=null){
  if(!active(u)||f.status==='removed')return false;
@@ -341,5 +345,5 @@ function canReviewFile(db,u,f,ctx=grantContext(db,u)){
 export function approveFile(db,u,id,decision){
  const f=db.one('v11_files',clean(id));check(f,'missing',404);check(['approved','rejected','removed'].includes(decision),'invalidTransition',400);
  check(canReviewFile(db,u,f)&&(decision!=='removed'||isDirector(u)),'forbidden');
- const next={...f,status:decision,updatedAt:at(),reviewerId:u.id};db.put('v11_files',next);audit(db,u,'v11.file.'+decision,next);return {id:next.id};
+ const next={...f,status:decision,offlineAllowed:false,updatedAt:at(),reviewerId:u.id};db.put('v11_files',next);audit(db,u,'v11.file.'+decision,next);return {id:next.id};
 }
