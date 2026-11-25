@@ -45,6 +45,8 @@ const guides={
  project:['ፕሮጀክቶች','Projects','ዓላማ፣ ኃላፊና የሥራ ሂደት ይፈትሹ፤ ፈቃድ ካለ ያድሱ።','Review objectives, lead and progress; update when authorized.'],
  committee:['ኮሚቴዎች','Committees','ዓላማ፣ ተሳታፊዎችና ውጤት ይከታተሉ።','Track committee purpose, participants and deliverables.'],
  meeting:['ጉብኝትና ስብሰባ','Visits & meetings','ቀን፣ ዓላማ፣ ውጤትና ቀጣይ እርምጃ ይመዝግቡ።','Record date, purpose, outcomes and follow-up when authorized.'],
+ centerReports:['የማዕከል ሪፖርቶች','Center reports','የራስ ማዕከል የወር ሪፖርቶችን ይመልከቱ፤ ቅጽ ካለ ያስገቡ።','Review your center reports; create or submit when the controls are available.'],
+ centerPlans:['የማዕከል ዕቅዶች','Center plans','የራስ ማዕከል ዕቅዶችን ይከታተሉ፤ ፈቃድ ካለ ያስገቡ።','Review your center plans; create or submit when authorized.'],
  centerAttendance:['የማዕከል መገኘት','Center attendance','እሁድና ከማክሰኞ እስከ ቅዳሜ አንድ ሳምንታዊ ስብሰባ። የራስዎን መዝገብ ይፈትሹ፤ የመመዝገብ ፈቃድ ካለ ያስገቡ።','Sunday program plus one weekly meeting Tuesday–Saturday. Review your attendance; manage the roster only if authorized.'],
  charters:['የክፍል ኃላፊነት','Department charters','የሚታዩትን የክፍል ዓላማና ውጤቶች ያንብቡ።','Read the displayed department purpose and deliverables.']
 };
@@ -55,10 +57,12 @@ function currentGuide(){
  const nexus=document.getElementById('app').classList.contains('nexus-mode');
  const nav=Array.from(document.querySelectorAll(nexus?'#gaiusV11 .v11nav button[data-section]':'#app .nav[data-page]')).filter(b=>!b.hidden&&!b.classList.contains('hide')&&getComputedStyle(b).display!=='none').map(b=>({key:b.dataset.section||b.dataset.page,label:b.textContent.trim(),button:b}));
  let key=nav.find(x=>x.button.classList.contains('on'))?.key||'profilePage';
+ for(const b of document.querySelectorAll('#centerWorkspaceNav:not([hidden]) [data-center-shortcut]')){const k=b.dataset.centerShortcut;nav.push({key:k==='monthly'?'centerReports':k==='plans6'?'centerPlans':k==='child'?'child':k==='mentee'?'mentee':k==='progress'?'progress':k,label:b.textContent.trim(),button:b});}
  const gov=document.querySelector('#governancePanel');
  if(gov&&nexus){const tab=gov.dataset.helpTab;if(tab)key=tab==='attendance'?'centerAttendance':tab==='grants'?'delegation':tab;}
  const selector=nexus&&key==='records'?document.querySelector('#v11Kind'):null;
  if(selector?.value==='centerAttendance')key='centerAttendance';
+ if(document.getElementById('centerWorkspaceNav')&&!document.getElementById('centerWorkspaceNav').hidden){if(selector?.value==='monthly')key='centerReports';if(selector?.value==='plans6')key='centerPlans';}
  return {key,nav,nexus,selector,gov};
 }
 function showHelp(){
