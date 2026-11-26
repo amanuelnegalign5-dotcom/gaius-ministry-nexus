@@ -5,7 +5,7 @@ export const EXTENDED_KINDS=['centers','centerUnits','monthly','plans6','followu
 export const OFFLINE_FILE_MAX_BYTES=5*1024*1024;
 export const OFFLINE_FILES_TOTAL_BYTES=30*1024*1024;
 const offlineFileSafe=f=>f?.offlineAllowed===true&&f.status==='approved'&&f.scopeType==='organization'&&f.scopeId==='org'&&['application/pdf','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.openxmlformats-officedocument.presentationml.presentation','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/plain','text/csv'].includes(f.type)&&f.size>0&&f.size<=OFFLINE_FILE_MAX_BYTES;
-const RESTRICTED_KINDS=new Set(['centerAttendance','succession','advisoryMeetings','visits','directorGoals','documents','committees','centerUnits']);
+const RESTRICTED_KINDS=new Set(['centerAttendance','succession','advisoryMeetings','visits','directorGoals','documents','committees','centerUnits','legacyDocument']);
 const categoryFor=k=>RESTRICTED_KINDS.has(k)||k==='mondayAttendance'?'attendance':'operations';
 const TRANSITIONS={submit:'submit',approve:'approve',revision_requested:'requestChanges',revise:'revise',archive:'archive'};
 const recordSafe=r=>EXTENDED_KINDS.includes(r.kind)&&r.status!=='archived'&&!(r.kind==='centerAttendance'&&r.data?.note)&&!(r.kind==='monthly'&&/counsel|ምክር/i.test(r.data?.departmentType||r.scopeId||''));
@@ -62,8 +62,8 @@ function legacyProjection(state){
  const u=state.me,director=isDirectorRole(u),pages=state.authorization?.legacyPages||[],can=k=>director||legacyPermission(u,k),reviews=state.reviews||[];
  const projectRows=(state.projects||[]).map(r=>({...pick(r,LEGACY_FIELDS.legacyProject),id:r.id,_v:r._v,editable:can('projects')&&(director||r.createdBy===u.id)}));
  const reportRows=(state.reports||[]).filter(safeReport).map(r=>{
-  const review=reviews.find(v=>v.id==='report:'+r.id),status=review?.recordVersion===r._v?review.state:r.submission==='draft'?'draft':'submitted';
-  return {...pick(r,LEGACY_FIELDS.legacyReport),id:r.id,_v:r._v,reviewVersion:review?._v||0,status,updatedAt:r.updatedAt,editable:!r.notes&&!r.evidence&&(director||r.userId===u.id&&['draft','revision_requested'].includes(status))};
+  const review=reviews.find(v=>v.id==='report:'+r.id),status=review?.recordVersion===r._v?review.state:r.submission==='draft'?'draft':r.submission==='submitted'?'submitted':r.status||'submitted';
+  return {...pick(r,[...LEGACY_FIELDS.legacyReport,'title','achieved','next']),id:r.id,_v:r._v,reviewVersion:review?._v||0,status,updatedAt:r.updatedAt,editable:!r.notes&&!r.evidence&&(director||r.userId===u.id&&['draft','revision_requested'].includes(status))};
  });
  const planRows=(state.plans||[]).map(r=>{const review=reviews.find(v=>v.id==='plan:'+r.id),status=review?.recordVersion===r._v?review.state:r.submission==='draft'?'draft':'submitted';return {...pick(r,LEGACY_FIELDS.legacyPlan),id:r.id,_v:r._v,reviewVersion:review?._v||0,status,updatedAt:r.updatedAt,editable:director||r.userId===u.id&&['draft','revision_requested'].includes(status)};});
  return {reports:reportRows,plans:planRows,projects:projectRows,
@@ -80,7 +80,7 @@ export function legacyDraftAllowed(s,p){
  const bucket=({legacyReport:'reports',legacyPlan:'plans',legacyProject:'projects',legacyAnnouncement:'announcements',legacyDocument:'documents'})[p.kind];
  if(p.id){const r=legacy[bucket]?.find(x=>x.id===p.id);if(!r?.editable||r._v!==p.version||(['legacyReport','legacyPlan'].includes(p.kind)&&r.reviewVersion!==p.reviewVersion))return false;}
  if(p.kind==='legacyReport'||p.kind==='legacyPlan'){
-  if(!['draft','submitted','delayed'].includes(d.status)||!/^\\d{4}-(0[1-9]|1[0-2])$/.test(d.month)||!d.department||!isDirectorRole(s.me)&&String(d.department).trim().toLowerCase()!==String(s.me.department||'').trim().toLowerCase())return false;
+  if(!['draft','submitted','delayed'].includes(d.status)||!/^\d{4}-(0[1-9]|1[0-2])$/.test(d.month)||!d.department||!isDirectorRole(s.me)&&String(d.department).trim().toLowerCase()!==String(s.me.department||'').trim().toLowerCase())return false;
   if(p.kind==='legacyReport')return !!d.activity?.trim()&&!/counsel|ምክር/i.test(d.department)&&(!d.center||isDirectorRole(s.me));
   return !!d.title?.trim()&&!!d.objective?.trim();
  }
@@ -166,7 +166,7 @@ export function offlineState(owner){
  const createScopes=Object.fromEntries(Object.entries(s.createScopes).filter(([k])=>categoryValid(s,owner,categoryFor(k))));
  const records=(s.records||[]).filter(r=>categoryValid(s,owner,categoryFor(r.kind)));
  const readableKinds=[...new Set([...Object.keys(createScopes),...records.map(r=>r.kind),...(s.readableKinds||[]).filter(k=>categoryValid(s,owner,categoryFor(k)))])];
- return {me:s.me,directory:attendance?s.directory||[]:[],offlineOnly:true,extended:s.extended===true,snapshotAt:s.at,onlineKinds:s.onlineKinds||[],offlineNav:{...s.nav,legacyPages:s.legacyPages??s.nav?.legacyPages??[]},offlineFiles:attendance?s.offlineFiles||[]:[],legacy:operations?s.legacy||{}:{},mondayRecords:attendance?s.mondayRecords||[]:[],v11:{records,files:[],capabilities:{director:!!s.nav?.director,oversight:!!s.nav?.oversight,defaultScopeType:s.defaultScopeType,defaultScopeId:s.defaultScopeId,createScopes,allowedKinds:Object.keys(createScopes),readableKinds,attendanceParticipants:attendance?s.participants:[],offlineMondayRoster:attendance?s.mondayRoster||[]:[]}}};
+ return {me:s.me,directory:attendance?s.directory||[]:[],offlineOnly:true,extended:s.extended===true,snapshotAt:s.at,onlineKinds:s.onlineKinds||[],offlineNav:{...s.nav,legacyPages:s.legacyPages??s.nav?.legacyPages??[]},offlineFiles:attendance?s.offlineFiles||[]:[],legacy:operations?{...s.legacy,documents:attendance?s.legacy?.documents||[]:[],rights:s.legacy?.rights?{...s.legacy.rights,legacyDocument:attendance&&s.legacy.rights.legacyDocument}:undefined}:{},mondayRecords:attendance?s.mondayRecords||[]:[],v11:{records,files:[],capabilities:{director:!!s.nav?.director,oversight:!!s.nav?.oversight,defaultScopeType:s.defaultScopeType,defaultScopeId:s.defaultScopeId,createScopes,allowedKinds:Object.keys(createScopes),readableKinds,attendanceParticipants:attendance?s.participants:[],offlineMondayRoster:attendance?s.mondayRoster||[]:[]}}};
 }
 async function fileRows(owner){return (await all()).filter(r=>r.owner===owner&&r.id.startsWith('file:'));}
 const fileKey=(owner,id)=>'file:'+owner+':'+id;
