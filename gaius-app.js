@@ -222,7 +222,7 @@ const roleText={
  volunteer:['በጎ ፈቃደኛ','Volunteer'],hq_staff:['የHQ ሠራተኛ','HQ Staff']
 };
 const departments={'Media':'ሚዲያ','Follow-up':'ክትትል','Service Coordination':'የአገልግሎት ቅንጅት','Counseling and Support':'ምክርና ድጋፍ','Research and Training':'ምርምርና ሥልጠና','Event':'ዝግጅት','Administration and Finance':'አስተዳደርና ፋይናንስ','Monday Staff Program':'የሰኞ ሠራተኞች ፕሮግራም','Support Team Department':'የድጋፍ ክፍል','Department of Centers Establishment':'የማዕከላት ምሥረታ ክፍል','International':'ዓለም አቀፍ','Prayer':'ጸሎት'};
-let lang=localStorage.gLang==='en'?'en':'am', mode='login', bootstrap=false, emailRecovery=false, view=null, tab='dashboard', editReport=null, editPlan=null, editProfile=null;
+let lang=localStorage.gLang==='en'?'en':'am', mode='login', bootstrap=false, emailRecovery=false, directorSlots=null, directorMail=null, view=null, tab='dashboard', editReport=null, editPlan=null, editProfile=null;
 const edits={},busy=new Set();
 const t=k=>extras[k]?.[lang]??base.translations[lang][k]??k;
 const role=r=>roleText[r]?.[lang==='am'?0:1]||r||'—';
@@ -266,7 +266,7 @@ function signedOut(){
  for(const el of document.querySelectorAll('input:not([type=checkbox]),textarea'))if(el.type!=='button')el.value='';
  set('regCountry','Ethiopia');$('photoPreview').removeAttribute('src');vis('photoPreview',false);setMode('login');
 }
-async function info(){const result=await store.info();bootstrap=result.bootstrap;emailRecovery=result.emailRecovery===true;authText();}
+async function info(){const result=await store.info();bootstrap=result.bootstrap;emailRecovery=result.emailRecovery===true;directorSlots=result.directorSlots||null;directorMail=result.directorMail||null;authText();}
 async function refresh(reuse=false){
  const next=await store.state({reuse}); if(next.onboarding){if(!view?.onboarding){view=next;onboarding();}else view=next;return;}
  const first=!view||view.onboarding||view.me?.id!==next.me?.id||view.me?.role!==next.me?.role;view=next;syncMondayAccess();
@@ -282,7 +282,8 @@ async function refresh(reuse=false){
 async function act(el,fn){
  if(busy.has(el))return;busy.add(el);if(el.matches('button'))el.disabled=true;
  try{await fn();}catch(e){
-  if(['expired','removed','pending'].includes(e.message)&&store.hasSession()){signedOut();info().catch(()=>{});}
+  if(e.message==='expired'&&store.hasSession()){if(!await resumeLockedWorkspace())signedOut();}
+  else if(['removed','pending'].includes(e.message)&&store.hasSession()){signedOut();info().catch(()=>{});}
   if(e.message==='conflict' && current())try{await refresh();}catch{}
   notification(e.message,true);
  }finally{busy.delete(el);if(el.matches('button')&&el.isConnected)el.disabled=false;}
@@ -301,7 +302,11 @@ function authText(){
  $('authScope').textContent=t(store.shared?'sharedExplain':'localExplain');
  $('modeLine').innerHTML=h(t(store.shared?'sharedMode':'localMode'))+' · '+button('refresh','refresh',{},'refreshBtn');
  $('authInstructions').textContent=mode==='complete'?t('completeHelp'):bootstrap?t(store.shared?'setupShared':'setupLocal'):t('requestHelp');
- vis('authInstructions',['register','complete'].includes(mode));vis('directorBox',mode==='register'&&directors.includes(val('regRole'))&&(store.shared&&bootstrap));
+ vis('authInstructions',['register','complete'].includes(mode));const isDirectorRegistration=mode==='register'&&directors.includes(val('regRole'));
+ vis('directorBox',isDirectorRegistration&&store.shared);
+ const role=val('regRole'),available=directorSlots?directorSlots[role]===true:bootstrap;
+ $('directorSendOtp').disabled=isDirectorRegistration&&(!store.shared||offline||!available||(directorMail?directorMail[role]!==true:!emailRecovery));
+ const directorStatus=$('directorStatus');if(directorStatus)directorStatus.textContent=!available?t('directorSlotTaken'):!(directorMail?directorMail[role]:emailRecovery)?t('emailNotConfigured'):lang==='am'?'የዚህን ሚና የተፈቀደ ኢሜይልና setup key ያስገቡ።':'Enter the authorized email and setup key for this director role.';
  $('directorBox').querySelector('label').textContent=t(store.shared?'setupKeyLabel':'localCodeLabel');
  $('authBtn').textContent=offline&&mode==='login'?(lang==='am'?'Offline ግባ':'Sign in offline'):t(mode==='login'?'login':mode==='complete'?'complete':'register');
  $('registerTab').disabled=offline||mode==='complete';
@@ -347,6 +352,8 @@ function onboarding(){
 }
 on('directorSendOtp',async()=>{
  if(!store.shared)throw Error('directorRequiresServer');
+ if(directorSlots&&directorSlots[val('regRole')]!==true)throw Error('directorSlotTaken');
+ if(directorMail&&directorMail[val('regRole')]!==true)throw Error('emailNotConfigured');
  if(!val('regEmail').trim()||!val('directorCode').trim())throw Error('Email and setup key are required');
  await store.requestDirectorCode(val('regRole'),val('regEmail'),val('directorCode'));
  alert(lang==='am'?'የ8 አሃዝ ኮዱን ከEmail ይመልከቱ። በ10 ደቂቃ ውስጥ ይጠቀሙ።':'Check your email for the eight-digit code. Use it within 10 minutes.');
@@ -354,8 +361,10 @@ on('directorSendOtp',async()=>{
 async function localLogin(credentials){
  if(!store.shared||mode!=='login')return;
  const identity=await vault.offlineLogin(credentials.username,credentials.password);
- store.clearSession();window.GAIUS_NAV_CONTEXT=null;view=null;
- sessionStorage.setItem('gaius.offline.localSession',identity.id);
+ let previous=null;try{previous=JSON.parse(sessionStorage.getItem('gaius.v11.offlineIdentity')||localStorage.getItem('gaius.offline.device')||'null');}catch{}
+ if(previous?.me?.id!==identity.id)store.clearSession();window.GAIUS_NAV_CONTEXT=null;view=null;
+ if(!store.hasSession())sessionStorage.setItem('gaius.offline.localSession',identity.id);
+ localStorage.setItem('gaius.offline.device',JSON.stringify({at:Date.now(),me:{id:identity.id}}));
  sessionStorage.setItem('gaius.v11.offlineIdentity',JSON.stringify({at:Date.now(),me:{id:identity.id}}));
  $('app').dataset.mondayAccess='no';$('who').textContent=identity.name+' · '+role(identity.role);set('password','');vis('auth',false);vis('app',true);
  window.dispatchEvent(new CustomEvent('gaius:offline-login',{detail:{id:identity.id}}));
@@ -369,6 +378,7 @@ on('authBtn',async()=>{
  requiredCenterInput();if($('regCenter').required&&!val('regCenter').trim())throw Error('centerRequired');
  const data={...regProfile(),...credentials,role:val('regRole'),department:val('regDept'),photo:await fileData($('regPhoto').files[0])||current()?.photo||'',setupKey:val('directorCode'),directorEmailCode:val('directorOtp')};
  if(mode==='complete'){await mutate('profile.complete',data);resetAuthForm();return;}
+ if(directors.includes(data.role)){if(directorSlots&&directorSlots[data.role]!==true)throw Error('directorSlotTaken');if(!/^\d{8}$/.test(data.directorEmailCode))throw Error('codeInvalid');}
  const res=await store.register(data);
  resetAuthForm();setMode('login');await info();set('username',credentials.username);
  if(res.status==='pending'){notification('pending');return;}
@@ -402,7 +412,8 @@ function requiredCenterInput(){const isCenter=centerRegistrationRoles.has(val('r
  if(directors.includes(val('regRole'))){$('regDept').required=false;set('regDept','');}
  $('regDeptStar').textContent=$('regDept').required?'*':'';
 }
-$('regRole').onchange=()=>{assignment('regRole','regDept');requiredCenterInput();authText();};
+$('regRole').onchange=()=>{set('directorOtp','');assignment('regRole','regDept');requiredCenterInput();authText();};
+ $('regEmail').addEventListener('input',()=>set('directorOtp',''));
 $('addRole').onchange=()=>assignment('addRole','addDept');
 $('regPhoto').onchange=()=>act($('regPhoto'),async()=>{const data=await fileData($('regPhoto').files[0]);$('photoPreview').src=photo(data);vis('photoPreview',!!data);});
 for(const id of ['langApp','langAuth'])$(id).onchange=()=>{lang=val(id);translate();};
@@ -890,12 +901,22 @@ function associateLabels(){
  for(const l of document.querySelectorAll('label:not([for])')){const c=l.nextElementSibling;if(c?.id&&c.matches('select,input,textarea'))l.htmlFor=c.id;}
  for(const [id,key] of [['search','search'],['monthFilter','month'],['langAuth','languages'],['langApp','languages']])$(id).setAttribute('aria-label',t(key));
 }
+async function resumeLockedWorkspace(){
+ let marker=null;try{marker=JSON.parse(localStorage.getItem('gaius.offline.device')||'null');}catch{}
+ const owner=view?.me?.id||marker?.me?.id;
+ if(!owner||!await vault.hasVault(owner))return false;
+ store.clearOnlineSession();vault.lockVault();view=null;window.GAIUS_ACTIVE_IDENTITY=null;window.GAIUS_NAV_CONTEXT=null;
+ sessionStorage.setItem('gaius.offline.localSession',owner);$('app').dataset.mondayAccess='no';vis('auth',false);vis('app',true);
+ window.dispatchEvent(new CustomEvent('gaius:offline-login',{detail:{id:owner}}));return true;
+}
+window.addEventListener('gaius:online-restored',()=>{void refresh().catch(e=>notification(e.message,true));});
 async function start(){
  window.GAIUS_LOGIN_READY=true;
  translate();setMode('login');associateLabels();requiredCenterInput();
- try{await info();if(store.hasSession())await refresh();}
+ try{await info();if(store.hasSession())await refresh();else if(localStorage.getItem('gaius.offline.device'))await resumeLockedWorkspace();}
  catch(e){
-  if(e.message==='offline'&&store.shared&&store.hasSession()){
+  if(e.message==='offline'&&store.shared&&(store.hasSession()||localStorage.getItem('gaius.offline.device'))){
+   if(!store.hasSession()&&await resumeLockedWorkspace())return;
    // Offline reload opens only the safe v11 draft workspace, never the
    // server-governed v10 pages or confidential backend records.
    let marker=null;try{marker=JSON.parse(sessionStorage.getItem('gaius.v11.offlineIdentity')||localStorage.getItem('gaius.offline.device')||'null');}catch{}
@@ -905,7 +926,8 @@ async function start(){
     return;
    }
   }
-  if(['expired','pending','removed'].includes(e.message))signedOut();notification(e.message,true);
+  if(e.message==='expired'){if(await resumeLockedWorkspace())return;signedOut();}
+  else if(['pending','removed'].includes(e.message))signedOut();notification(e.message,true);
  }
 }
 start();

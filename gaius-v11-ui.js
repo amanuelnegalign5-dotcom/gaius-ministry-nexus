@@ -22,14 +22,14 @@ function centerLinks(ctx){const c=ctx?.capabilities||{},read=c.readableKinds||c.
 function drawCenterNav(){const ctx=window.GAIUS_NAV_CONTEXT;centerNav.replaceChildren();centerNav.hidden=!isCenterAccount(ctx?.me);if(centerNav.hidden)return;launch.textContent='✦ '+text('የማዕከል ሥራ','Center workspace');for(const link of centerLinks(ctx)){const b=document.createElement('button');b.type='button';b.className='btn ghost';b.textContent=text(link.am,link.en);b.dataset.centerShortcut=link.kind||link.tab||link.section;b.onclick=()=>void openDestination(link);centerNav.append(b);}if(!ctx.me.center){const p=document.createElement('p');p.className='notice';p.textContent=text('የማዕከል ምደባ የለም። ዳይሬክተሩ ትክክለኛውን ማዕከል እንዲመድብ ይጠይቁ።','No center is assigned. Ask your director to assign your actual center before managing center records.');centerNav.append(p);}}
 async function openDestination(link){if(opening)return;editing=null;if(link.kind)kind=link.kind;requestedGovernanceTab=link.tab||null;if(active){section=link.section;try{await update(true);}catch(e){alertMsg(e.message,true);}}else await open(link.section);}
 let requestedGovernanceTab=null;
-window.addEventListener('gaius:nexus-state-refreshed',()=>{drawCenterNav();if(active&&!opening)void update(true).catch(e=>{close();root.replaceChildren();state=null;showOpenError(e);});});
+window.addEventListener('gaius:nexus-state-refreshed',()=>{drawCenterNav();if(active&&root.querySelector('#v11form:focus-within,.legacyOfflineForm:focus-within,.legacyOfflineReview:focus-within,.legacyOfflineComment:focus-within'))return;if(active&&!opening)void update(true).catch(e=>{close();root.replaceChildren();state=null;showOpenError(e);});});
 window.addEventListener('gaius:nexus-session-cleared',()=>{centerNav.hidden=true;centerNav.replaceChildren();});
 $('langApp')?.addEventListener('change',drawCenterNav);if(window.GAIUS_NAV_CONTEXT)drawCenterNav();
 function alertMsg(m,error=false){const x=$('v11notice');if(x){x.textContent=String(m||'');x.className='v11notice '+(error?'v11error':'');x.hidden=false;}}
 async function load(reuse=false){
  const localOwner=sessionStorage.getItem('gaius.offline.localSession');
  if(localOwner&&!store.hasSession()){
-  const local=vault.offlineState(localOwner);if(!local&&!vault.vaultUnlocked(localOwner))throw Error('offlineLoginExpired');
+  const local=vault.offlineState(localOwner);// Keep the signed-in shell while its encrypted data is locked or expired.
   state=local||{me:{id:localOwner},offlineOnly:true,v11:{records:[],files:[],capabilities:{}}};
   if(!state.extended&&!['records','offline','reference','cachedLegacy'].includes(section))section='offline';return state;
  }
@@ -42,6 +42,7 @@ async function load(reuse=false){
   // or confidential backend records in offline session storage.
   sessionStorage.setItem('gaius.v11.offlineIdentity',JSON.stringify({at:Date.now(),me:{id:state.me.id,name:state.me.name,role:state.me.role,department:state.me.department,center:state.me.center}}));
  }catch(e){
+  if(e.message==='expired'){const owner=state?.me?.id||JSON.parse(localStorage.getItem('gaius.offline.device')||'null')?.me?.id;if(owner&&await vault.hasVault(owner)){store.clearOnlineSession();vault.lockVault();sessionStorage.setItem('gaius.offline.localSession',owner);state={me:{id:owner},offlineOnly:true,v11:{records:[],files:[],capabilities:{}}};section='offline';return state;}}
   if(e.message!=='offline')throw e;
   const cached=JSON.parse(sessionStorage.getItem('gaius.v11.offlineIdentity')||localStorage.getItem('gaius.offline.device')||'null');
   if(!store.hasSession()&&!localStorage.getItem('gaius.offline.device'))throw e;
@@ -94,7 +95,7 @@ async function open(requestedSection=null){
   showOpenError(e);
  }finally{opening=false;launch.disabled=false;}
 }
-window.addEventListener('gaius:offline-login',()=>{if(!active&&!opening)void open('offline');});
+window.addEventListener('gaius:offline-login',()=>{if(active){section='offline';editing=null;legacyEdit=null;void update().catch(e=>alertMsg(e.message,true));}else if(!opening)void open('offline');});
 function close(){
  window.dispatchEvent(new Event('gaius:nexus-governance-close'));
  if(previewUrl){URL.revokeObjectURL(previewUrl);previewUrl=null;}
@@ -135,7 +136,7 @@ const mine=()=>caps().defaultScopeType||(my().center?'center':my().department?'h
 const appStrings={cachedLegacy:['የቀድሞ መዝገቦች','Previous workspace'],director:['የዳይሬክተር ሥራ','Director workspace'],analytics:['የማዕከላት ትንታኔ','Center analytics'],overview:['ዋና እይታ','Overview'],records:['ሥራ መዝገቦች','Operations'],files:['የሰነድ ማከማቻ','File uploads'],offline:['ያልተላኩ ረቂቆች','Offline drafts'],governance:['የጋይዮስ አስተዳደር','Governance'],delegation:['ውክልናና ፈቃድ','Delegation & permissions'],reference:['የድርጅት ስሞች','Official names']};
 const tr=s=>appStrings[s]?(localLang()==='am'?appStrings[s][0]:appStrings[s][1]):s;
 function availableSections(){if(state?.offlineOnly){const n=state.offlineNav||{};if(state.extended)return [...(n.director?['director']:[]),...(n.director||n.oversight?['analytics']:[]),'overview',...(myAvailableKinds().length||state.onlineKinds?.length?['records']:[]),...(n.files?['files']:[]),...(n.governance?['governance']:[]),...(n.director?['delegation']:[]),...(state.snapshotAt?['cachedLegacy']:[]),'offline','reference'];return [...(state.snapshotAt?['cachedLegacy']:[]),...(myAvailableKinds().length?['records']:[]),'offline',...(vault.vaultUnlocked(my().id)&&my().role?['reference']:[])];}return Object.keys(appStrings).filter(x=>x==='cachedLegacy'?false:x==='director'?caps().director:x==='delegation'?caps().director&&store.shared&&!state.offlineOnly:x==='analytics'?(caps().director||caps().oversight):x==='records'?myAvailableKinds().length>0:x==='files'?(caps().canUploadFile||(state?.v11?.files||[]).length>0):x==='governance'?store.shared&&!state.offlineOnly&&(caps().director||mine()==='center'||!!my().center||caps().hqReports||eligibleGrantRecipient(my())):true);}
-function frame(content){const offlineBanner=state?.offlineOnly?'<div class="v11guide" role="status">'+text('Offline — የተቀመጠ መረጃ፤ ለውጦች የServer ማረጋገጫ ይጠብቃሉ።','Offline — last saved data; changes await server confirmation.')+(state.snapshotAt?' · '+escape(new Date(state.snapshotAt).toLocaleString()):'')+' <button type="button" data-v="reconnect">'+text('ግንኙነት ፈትሽ','Reconnect')+'</button></div>':'';root.innerHTML=`<div class="v11wrap"><div class="v11top"><div class="v11identity"><img class="v11logo" src="./icons/official-logo.jpg" alt="Gaius Ministry logo"><div><h1>Gaius Nexus <small>v12.1.0</small></h1><p>${text('የድርጅት አመራር፣ እቅድ፣ ሪፖርትና ክትትል','Ministry leadership, planning, reporting and follow-up')}</p></div></div><button type="button" class="btn ghost" data-v="close">${text('ወደ ነባር ገጾች ተመለስ','Back to existing pages')}</button></div>
+function frame(content){const offlineBanner=state?.offlineOnly?'<div class="v11guide" role="status">'+text('Offline — የተቀመጠ መረጃ፤ ለውጦች የServer ማረጋገጫ ይጠብቃሉ።','Offline — last saved data; changes await server confirmation.')+(state.snapshotAt?' · '+escape(new Date(state.snapshotAt).toLocaleString()):'')+' <button type="button" data-v="reconnect">'+text('ግንኙነት ፈትሽ','Reconnect')+'</button></div>':'';root.innerHTML=`<div class="v11wrap"><div class="v11top"><div class="v11identity"><img class="v11logo" src="./icons/official-logo.jpg" alt="Gaius Ministry logo"><div><h1>Gaius Nexus <small>v12.2.0</small></h1><p>${text('የድርጅት አመራር፣ እቅድ፣ ሪፖርትና ክትትል','Ministry leadership, planning, reporting and follow-up')}</p></div></div><button type="button" class="btn ghost" data-v="close">${text('ወደ ነባር ገጾች ተመለስ','Back to existing pages')}</button></div>
   <div class="v11nav">${availableSections().map(x=>`<button class="${section===x?'on':''}" type="button" data-v="section" data-section="${x}">${tr(x)}${state.offlineOnly&&['governance','delegation'].includes(x)?' · '+text('Online ያስፈልጋል','Online required'):''}</button>`).join('')}</div><div id="v11notice" class="v11notice" hidden></div><div class="v11content">${offlineBanner}${content}</div></div>`;}
 function tile(title,value,desc=''){return `<div class="v11tile"><span>${escape(title)}</span><strong>${escape(value)}</strong><small>${escape(desc)}</small></div>`;}
 function dashboard(){const all=records().filter(r=>r.kind!=='centers'&&r.kind!=='centerUnits');const approved=all.filter(r=>r.status==='approved'),pending=all.filter(r=>r.status==='submitted');
@@ -274,6 +275,41 @@ function offlinePolicyForm(){
  return '<div class="v11box"><h2>'+text('የOffline ፈቃድ ቅንብር','Offline access policy')+'</h2><p>'+text('የሚናና የመረጃ ደረጃ ገደብ ከሁለቱ አነስተኛው ይሠራል። ጊዜያዊ ውክልና ቀድሞ ሊያበቃ ይችላል።','The shorter role and data-category limit applies. A temporary grant may expire sooner.')+'</p><form id="offlinePolicyForm" data-version="'+Number(p.version)+'">'+Object.entries(labels).map(([key,label])=>'<label class="v11field"><span>'+text(...label)+'</span><select name="'+key+'">'+opts(OFFLINE_POLICY_OPTIONS.filter(n=>key!=='attendance'||n<=7).map(n=>[String(n),n===0?text('ተዘግቷል','Disabled'):n+' '+text('ቀናት','days')]),String(p.values[key]))+'</select></label>').join('')+'<button class="btn" type="submit">'+text('ቅንብር አስቀምጥ','Save offline policy')+'</button></form><p>'+text('ለOffline ላሉ መሣሪያዎች ለውጡ ሲገናኙ ይደርሳል።','Policy changes reach disconnected devices when they reconnect.')+'</p></div>';
 }
 let legacyTab='dashboard',legacyMonth='';
+
+let legacyEdit=null;
+const LEGACY_FORM={
+ legacyReport:[['recordId','Record ID','መዝገብ ቁጥር'],['month','Reporting month','የሪፖርት ወር','month',true],['activityDate','Activity date','የተግባር ቀን','date'],['department','Department','ክፍል','text',true],['center','Center','ማዕከል'],['activity','Activity','ተግባር','text',true],['planned','Planned','የታቀደ','number'],['actual','Actual','የተከናወነ','number'],['result','Result','ውጤት','long'],['problem','Problem','ችግር','long'],['challenge','Challenge','ተግዳሮት','long'],['actionTaken','Action taken','የተወሰደ እርምጃ','long'],['nextAction','Next action','ቀጣይ እርምጃ','long'],['actionOwner','Responsible person','ኃላፊ'],['dueDate','Due date','ቀነ ገደብ','date'],['priority','Priority','ቅድሚያ'],['dataSource','Data source','የመረጃ ምንጭ'],['views','Views','ዕይታ','number'],['engagement','Engagement','ተሳትፎ','number'],['followers','Followers','ተከታዮች','number']],
+ legacyPlan:[['title','Plan title','የዕቅድ ርዕስ','text',true],['month','Month','ወር','month',true],['department','Department','ክፍል','text',true],['objective','Objective','ዓላማ','long',true],['target','Target','ግብ'],['owner','Owner','ኃላፊ'],['dueDate','Due date','ቀነ ገደብ','date'],['projectId','Linked project','ተያያዥ ፕሮጀክት','project']],
+ legacyProject:[['title','Project title','የፕሮጀክት ርዕስ','text',true],['body','Description','መግለጫ','long'],['owner','Owner','ኃላፊ'],['due','Due date','ቀነ ገደብ','date']],
+ legacyAnnouncement:[['title','Announcement title','የማስታወቂያ ርዕስ','text',true],['body','Announcement','ማስታወቂያ','long']],
+ legacyDocument:[['title','Document title','የሰነድ ርዕስ','text',true],['type','Type','ዓይነት'],['expiry','Expiry','የሚያበቃበት ቀን','date'],['fileName','File name (registry only)','የፋይል ስም','text',true]]
+};
+const legacyBucket={legacyReport:'reports',legacyPlan:'plans',legacyProject:'projects',legacyAnnouncement:'announcements',legacyDocument:'documents'};
+const legacyRight=k=>state.legacy?.rights?.[k]===true;
+function legacyForm(k,r=null){
+ if(!legacyRight(k))return '';
+ const fields=LEGACY_FORM[k],today=new Date().toISOString().slice(0,10),director=directorRole(my().role);
+ const values=r||{month:today.slice(0,7),activityDate:today,department:my().department||''};
+ const heading=({legacyReport:['ወርሃዊ ሪፖርት','Monthly report'],legacyPlan:['ዕቅድ','Plan'],legacyProject:['ፕሮጀክት','Project'],legacyAnnouncement:['ማስታወቂያ','Announcement'],legacyDocument:['ሰነድ መዝገብ','Document registry']})[k];
+ return `<form class="v11box legacyOfflineForm" data-kind="${k}" data-id="${escape(r?.id||'')}" data-version="${r?Number(r._v):0}" data-review-version="${r?Number(r.reviewVersion||0):0}"><h3>${text(r?'አርትዕ':'አዲስ',r?'Edit':'New')} · ${text(...heading)}</h3><p class="v11guide">${text('ሚስጥራዊ መረጃ አያስገቡ። ይህ ረቂቅ ከግንኙነት በኋላ ይረጋገጣል።','Do not enter confidential information. Drafts are encrypted and validated when synced.')}</p><div class="v11fields">${fields.map(([key,en,am,type='text',req=false])=>{
+ const v=values[key]??'',required=req?' required':'',label=escape(text(am,en))+(req?' *':'');let c;
+ if(key==='center'&&!director)return '<input type="hidden" name="center" value="">';
+ if(type==='long')c='<textarea name="'+key+'" rows="3"'+required+'>'+escape(v)+'</textarea>';
+ else if(type==='project')c='<select name="projectId">'+opts([['','—'],...(state.legacy?.projects||[]).map(p=>[p.id,p.title]),...(v&&!(state.legacy?.projects||[]).some(p=>p.id===v)?[[v,v]]:[])],v)+'</select>';
+ else c='<input name="'+key+'" type="'+type+'" value="'+escape(v)+'"'+required+(type==='number'?' min="0" step="any"':'')+(key==='department'&&!director?' readonly':'')+'>';
+ return '<label class="v11field"><span>'+label+'</span>'+c+'</label>';
+ }).join('')}${['legacyReport','legacyPlan'].includes(k)?'<label class="v11field"><span>'+text('ሁኔታ','Status')+'</span><select name="status">'+opts([['draft',text('ረቂቅ','Draft')],['submitted',text('ለማጽደቅ ላክ','Submit when synced')],['delayed',text('ዘግይቷል','Delayed')]],'draft')+'</select></label>':''}</div><button type="submit" class="btn">${text('Offline ረቂቅ አስቀምጥ','Save offline draft')}</button>${r?'<button type="button" data-v="legacyCancel">'+text('ተወው','Cancel')+'</button>':''}</form>`;
+}
+function legacyRows(k,rows,details){
+ const showReview=legacyRight('legacyReview')&&['legacyReport','legacyPlan'].includes(k);
+ return rows.map(r=>`<article class="v11record">${details([Object.fromEntries(Object.entries(r).filter(([key])=>!['_v','editable','reviewVersion'].includes(key)))],x=>x.title||x.activity||x.id)}<div class="v11actions">${r.editable&&legacyRight(k)?'<button data-v="legacyEdit" data-kind="'+k+'" data-id="'+escape(r.id)+'">'+text('አርትዕ','Edit')+'</button>':''}</div>${showReview&&r.status!=='draft'&&Number.isInteger(r._v)?`<form class="legacyOfflineReview" data-kind="${k==='legacyPlan'?'plan':'report'}" data-id="${escape(r.id)}" data-version="${Number(r._v)}" data-review-version="${Number(r.reviewVersion||0)}"><label class="v11field">${text('ውሳኔ','Review decision')}<select name="decision">${opts([['approved',text('አጽድቅ','Approve')],['revision_requested',text('ማሻሻያ','Request revision')],['under_review',text('እየተገመገመ','Under review')],...(r.status==='approved'?[['locked',text('ቆልፍ','Lock')]]:[])].filter(x=>x[0]!==r.status),'')}</select></label><label class="v11field">${text('ምክንያት','Review note')}<textarea name="note" rows="2"></textarea></label><button type="submit">${text('ውሳኔ አስቀምጥ','Queue decision')}</button></form>`:''}${k==='legacyReport'&&legacyRight('legacyComment')?`<form class="legacyOfflineComment" data-id="${escape(r.id)}"><label class="v11field">${text('ለሁሉም የሚታይ አስተያየት','Visible director comment')}<textarea name="text" rows="2" required></textarea></label><button type="submit">${text('አስተያየት አስቀምጥ','Queue comment')}</button></form>`:''}</article>`).join('');
+}
+function legacyEditor(k,rows,details){
+ const r=legacyEdit?.kind===k?rows.find(x=>x.id===legacyEdit.id):null;
+ return legacyForm(k,r)+legacyRows(k,rows,details)||'<p>'+text('በዚህ ሚና የሚጻፍ ወይም የተቀመጠ መዝገብ የለም።','No writable or cached records for this role.')+'</p>';
+}
+function legacyShortcut(k,label){return myAvailableKinds().includes(k)?'<button data-v="openKind" data-kind="'+k+'">'+escape(label)+'</button>':'';}
+
 function cachedLegacyScreen(){
  const labels=window.GAIUS_V10.translations[localLang()];
  const allowed=state.offlineNav?.legacyPages||[];
@@ -290,6 +326,8 @@ function cachedLegacyScreen(){
  const details=(rows,title)=>rows.map(r=>`<details class="v11record"><summary>${escape(title(r))}</summary>${Object.entries(r).filter(([k,v])=>k!=='id'&&v!=null&&v!=='').map(([k,v])=>`<p><b>${escape(k)}</b> ${escape(v)}</p>`).join('')}</details>`).join('')||empty;
  const reports=state.legacy?.reports||[],plans=state.legacy?.plans||[];
  let body='';
+ const shortcuts=myAvailableKinds().map(k=>legacyShortcut(k,text(V11_KINDS[k].am,V11_KINDS[k].en))).join('');
+ const upgrade=state.extended&&!state.legacy?.rights?'<p class="v11guide">'+text('አዲሱን የOffline ፈቃድ ለማዘመን Online ግቡና vault ይክፈቱ።','Connect online and unlock the vault once to refresh the new offline form permissions.')+'</p>':'';
  if(!home||!state.extended){
   body=text('የተፈቀዱ ገጾችና መዝገቦች በዚህ መሣሪያ እንዲቀመጡ Online ይግቡ፣ ሙሉ Offline የሥራ ቦታውን ያንቁ።','Sign in online and enable the extended workspace on this device to save authorized pages and records.');
  }else if(legacyTab==='dashboard'){
@@ -299,20 +337,24 @@ function cachedLegacyScreen(){
   const counts=[[labels.reports,rows.length],[labels.approved,rows.filter(r=>r.status==='approved'||r.status==='locked').length],[text('ረቂቆች','Drafts'),rows.filter(r=>r.status==='draft').length]];
   body=`<label class="v11field">${escape(labels.month)}<select id="legacyOfflineMonth">${opts([['',text('ሁሉም ወራት','All months')],...months.map(m=>[m,m])],legacyMonth)}</select></label><div class="kpis">${counts.map(([label,count])=>`<div class="kpi"><b>${count}</b><span>${escape(label)}</span></div>`).join('')}</div><h3>${escape(labels.recent)}</h3>${details([...rows].sort((a,b)=>String(b.updatedAt||b.month).localeCompare(String(a.updatedAt||a.month))).slice(0,5),r=>r.title||r.activity||r.id)}`;
  }else if(legacyTab==='reports'||legacyTab==='plans'){
-  body=details(legacyTab==='reports'?reports:plans,r=>r.title||r.activity||r.objective||r.id);
+  body=legacyTab==='reports'?legacyEditor('legacyReport',reports,details):legacyEditor('legacyPlan',plans,details);
  }else if(legacyTab==='attendance'){
   const people=new Map((state.directory||[]).map(p=>[p.id,p.name]));
-  body=(state.mondayRecords||[]).map(r=>`<article class="v11record">${escape(people.get(r.personId)||r.personId)} · ${escape(r.date)} · ${escape(r.status)} ${vault.mondayRoster(my().id).some(p=>p.id===r.personId)?`<button data-v="editMonday" data-id="${escape(r.id)}">${text('አርትዕ','Edit')}</button>`:''}</article>`).join('')||empty;
+  body=(vault.mondayRoster(my().id).length?'<button data-v="section" data-section="offline">'+text('አዲስ መገኘት መዝግብ','Record attendance')+'</button>':'')+(state.mondayRecords||[]).map(r=>`<article class="v11record">${escape(people.get(r.personId)||r.personId)} · ${escape(r.date)} · ${escape(r.status)} ${vault.mondayRoster(my().id).some(p=>p.id===r.personId)?`<button data-v="editMonday" data-id="${escape(r.id)}">${text('አርትዕ','Edit')}</button>`:''}</article>`).join('')||empty;
  }else if(legacyTab==='directory'){
   body=details(state.directory||[],p=>p.name||p.id);
  }else if(legacyTab==='profilePage'){
   body=details([state.me],p=>p.name||p.id);
- }else if(legacyTab==='documents'&&availableSections().includes('files')){
-  body=`<button data-v="section" data-section="files">${text('የተቀመጡ ሰነዶችን ክፈት','Open saved documents')}</button>`;
- }else if(legacyTab==='reportEntry'&&myAvailableKinds().includes('monthly')){
-  body=`<button data-v="openKind" data-kind="monthly">${text('የወር ሪፖርት ረቂቅ ክፈት','Open monthly report drafts')}</button>`;
+  }else if(legacyTab==='documents'){
+  body=legacyEditor('legacyDocument',state.legacy?.documents||[],details)+(availableSections().includes('files')?'<button data-v="section" data-section="files">'+text('የተቀመጡ ሰነዶችን ክፈት','Open saved documents')+'</button>':'');
+ }else if(legacyTab==='reportEntry'){
+  body=legacyForm('legacyReport')+legacyShortcut('monthly',text('የኔክሰስ ወርሃዊ ሪፖርት','Nexus monthly report'));
+ }else if(legacyTab==='workspace'){
+  body=legacyShortcut('tasks',text('ሥራዎችና ውሳኔዎች','Tasks and decisions'))+legacyShortcut('initiatives',text('የኔክሰስ ፕሮጀክቶች','Nexus projects'))+legacyEditor('legacyProject',state.legacy?.projects||[],details)+legacyEditor('legacyAnnouncement',state.legacy?.announcements||[],details);
+ }else if(legacyTab==='board'){
+  body=legacyEditor('legacyAnnouncement',state.legacy?.announcements||[],details)+legacyShortcut('updates',text('የኔክሰስ ዜና','Nexus updates'));
  }else body=online;
- root.innerHTML=`<div class="v11wrap"><header class="v11top"><h1>${text('የጋይዮስ ዳሽቦርድ','Gaius dashboard')}</h1><button class="btn ghost" data-v="section" data-section="${state.extended?(caps().director?'director':'overview'):'offline'}">Gaius Nexus</button></header><nav class="v11nav" aria-label="${text('ነባር ገጾች','Existing pages')}">${nav}</nav><div id="v11notice" hidden></div><div class="v11guide">${text('Offline · በመሣሪያው ላይ የተቀመጠ መረጃ','Offline · Data saved on this device')} <button data-v="reconnect">${text('ግንኙነት ፈትሽ','Reconnect')}</button></div><section class="v11box"><h2>${escape(names[legacyTab]||text('ነባር ገጾች','Existing pages'))}</h2>${body}</section></div>`;
+ root.innerHTML=`<div class="v11wrap"><header class="v11top"><h1>${text('የጋይዮስ ዳሽቦርድ','Gaius dashboard')}</h1><button class="btn ghost" data-v="section" data-section="${state.extended?(caps().director?'director':'overview'):'offline'}">Gaius Nexus</button></header><nav class="v11nav" aria-label="${text('ነባር ገጾች','Existing pages')}">${nav}</nav><div id="v11notice" hidden></div><div class="v11guide">${text('Offline · በመሣሪያው ላይ የተቀመጠ መረጃ','Offline · Data saved on this device')} <button data-v="reconnect">${text('ግንኙነት ፈትሽ','Reconnect')}</button> <button data-v="section" data-section="offline">${text('ያልተላኩ ረቂቆች','Pending drafts')}</button></div><section class="v11box"><h2>${escape(names[legacyTab]||text('ነባር ገጾች','Existing pages'))}</h2>${upgrade}${body}${shortcuts?'<div class="v11box"><h3>'+text('የተፈቀዱ የኔክሰስ ተግባራት','Your authorized Nexus modules')+'</h3><div class="v11actions">'+shortcuts+'</div></div>':''}</section></div>`;
 }
 async function offlineFilesScreen(){const owner=my().id,mark=viewEpoch,files=await vault.cachedFiles(owner);if(!active||section!=='files'||my().id!==owner||mark!==viewEpoch)return;frame('<div class="v11box"><h2>'+text('የተመሰጠሩ Offline ሰነዶች','Encrypted offline documents')+'</h2><p>'+text('የተፈቀደና በዚህ መሣሪያ የተቀመጠ ሰነድ ብቻ ይነበባል። ማውረድ ከVault ውጭ ቅጂ ይፈጥራል።','Only classified documents saved on this device can be opened. Downloading creates a copy outside the encrypted vault.')+'</p>'+files.map(f=>'<article class="v11record"><b>'+escape(f.name)+'</b> · '+Math.ceil(f.size/1024)+' KB <button type="button" data-v="readCachedFile" data-id="'+escape(f.id)+'">'+text('አውርድ','Download')+'</button> <button type="button" data-v="removeCachedFile" data-id="'+escape(f.id)+'">'+text('የመሣሪያ ቅጂ አስወግድ','Remove local copy')+'</button></article>').join('')+(files.length?'':'<p>'+text('የተቀመጠ ሰነድ የለም።','No saved offline documents.')+'</p>')+'</div>');}
 function onlineRequiredScreen(){frame('<div class="v11box"><h2>'+escape(tr(section))+'</h2><p>'+text('ይህ ገጽ በፈቃድዎ ውስጥ አለ፤ ሚስጥራዊ መረጃ ወይም የServer ማረጋገጫ ስለሚፈልግ Online ይጠቀሙ።','This page remains in your authorized workspace. Connect online to access protected information and server actions.')+'</p></div>');}
@@ -323,7 +365,8 @@ async function offlineScreen(){
  frame(`<div class="v11box"><h2>${text('የOffline ሥራ','Offline workspace')} · ${state.offlineOnly?text('ግንኙነት የለም','Offline'):text('ግንኙነት አለ','Online')}</h2>
  <p class="v11guide">${text('ረቂቆች በልዩ የይለፍ ሐረግ ይጠበቃሉ። ፈቃድ በሚናና በመረጃ ደረጃ ይገደባል፤ ከመላክ በፊት Server ይፈትሻል። የግል ሰነድ፣ ፎቶ እና ሚስጥራዊ ማስታወሻ አታስቀምጡ።','Drafts are encrypted using a separate passphrase. After enabling or unlocking online, use your username and this passphrase on the sign-in page to sign in offline. Offline access follows the role and data policy and is rechecked by the server. Do not include confidential notes, photos or private documents.')}</p>
  ${lease?`<p>${text('የሥራ ረቂቅ ፈቃድ','Operations access')}: ${escape(new Date(lease.operationsUntil).toLocaleString())} · ${text('የመገኘትና የተጠበቀ መረጃ ፈቃድ','Attendance & restricted access')}: ${escape(new Date(lease.attendanceUntil).toLocaleString())}</p>`:''}
- ${!unlocked?`<form id="offlineUnlock"><label class="v11field"><span>${text('የOffline ይለፍ ሐረግ','Offline passphrase (10+ characters)')}</span><input id="offlinePassphrase" type="password" minlength="10" required autocomplete="off"></label><button class="btn" type="submit" ${!configured&&state.offlineOnly?'disabled':''}>${configured?text('ክፈት','Unlock'):text('Offline አንቃ','Enable offline mode')}</button></form><p>${text('የይለፍ ሐረጉን ከረሱ የተቀመጡ ረቂቆች ሊመለሱ አይችሉም።','If you forget this passphrase, encrypted drafts cannot be recovered.')}</p>`:`<p>${text('የተጠበቁ ረቂቆች','Encrypted pending drafts')}: ${drafts.length}</p><div class="v11actions">${!store.hasSession()&&navigator.onLine?`<button data-v="offlineSignIn">${text('ለማመሳሰል ይግቡ','Sign in to sync')}</button>`:''}<button class="btn" data-v="sync" ${!navigator.onLine?'disabled':''}>${text('አመሳስል','Sync now')}</button><button data-v="section" data-section="records" ${!myAvailableKinds().length?'disabled':''}>${text('ረቂቅ ጻፍ','Create draft')}</button><button data-v="lockOffline">${text('ቆልፍ','Lock offline vault')}</button></div>${drafts.map(d=>`<article class="v11record"><b>${escape(V11_KINDS[d.payload.kind]?.en||d.payload.kind)}</b><p>${escape(d.payload.data?.title||d.payload.data?.topic||d.payload.data?.date||d.payload.decision||d.payload.kind)}</p><small>${escape(d.createdAt)} · ${d.error?escape(d.error):text('ለመላክ ይጠብቃል','Pending sync')}${d.conflicts?.length?' · '+escape(d.conflicts.join(', ')):''}</small><details><summary>${text('የተዘጋጀ ለውጥ','Queued change')}</summary><pre class="v11body">${escape(JSON.stringify(d.payload,null,2))}</pre></details><button data-v="dropEncrypted" data-id="${escape(d.id)}">${text('ረቂቅ ሰርዝ','Discard draft')}</button></article>`).join('')}`}</div>
+ ${state.offlineOnly&&navigator.onLine&&!store.hasSession()?`<form id="offlineReauth"><h3>${text('ከመለያዎ ሳይወጡ ዳግም ይረጋገጡ','Verify your account without logging out')}</h3><label class="v11field">${text('የተጠቃሚ ስም','Username')}<input name="username" autocomplete="username" required></label><label class="v11field">${text('የOnline ይለፍ ቃል','Online password')}<input name="password" type="password" autocomplete="current-password" required></label><button type="submit" class="btn">${text('አረጋግጥ','Reconnect account')}</button></form>`:''}
+ ${!unlocked?`<form id="offlineUnlock"><label class="v11field"><span>${text('የOffline ይለፍ ሐረግ','Offline passphrase (10+ characters)')}</span><input id="offlinePassphrase" type="password" minlength="10" required autocomplete="off"></label><button class="btn" type="submit" ${!configured&&state.offlineOnly?'disabled':''}>${configured?text('ክፈት','Unlock'):text('Offline አንቃ','Enable offline mode')}</button></form><p>${text('የይለፍ ሐረጉን ከረሱ የተቀመጡ ረቂቆች ሊመለሱ አይችሉም።','If you forget this passphrase, encrypted drafts cannot be recovered.')}</p>`:`<p>${text('የተጠበቁ ረቂቆች','Encrypted pending drafts')}: ${drafts.length}</p><div class="v11actions"><button class="btn" data-v="sync" ${!navigator.onLine?'disabled':''}>${text('አመሳስል','Sync now')}</button><button data-v="section" data-section="records" ${!myAvailableKinds().length?'disabled':''}>${text('ረቂቅ ጻፍ','Create draft')}</button><button data-v="lockOffline">${text('ቆልፍ','Lock offline vault')}</button></div>${drafts.map(d=>`<article class="v11record"><b>${escape(V11_KINDS[d.payload.kind]?.en||d.payload.kind)}</b><p>${escape(d.payload.data?.title||d.payload.data?.topic||d.payload.data?.date||d.payload.decision||d.payload.kind)}</p><small>${escape(d.createdAt)} · ${d.error?escape(d.error):text('ለመላክ ይጠብቃል','Pending sync')}${d.conflicts?.length?' · '+escape(d.conflicts.join(', ')):''}</small><details><summary>${text('የተዘጋጀ ለውጥ','Queued change')}</summary><pre class="v11body">${escape(JSON.stringify(d.payload,null,2))}</pre></details><button data-v="dropEncrypted" data-id="${escape(d.id)}">${text('ረቂቅ ሰርዝ','Discard draft')}</button></article>`).join('')}`}</div>
  ${monday.length?`<div class="v11box"><h2>${text('የሰኞ መገኘት ረቂቅ','Monday attendance draft')}</h2><form id="offlineMonday"><label class="v11field"><span>${text('ቀን (ሰኞ)','Date (Monday)')}</span><input name="date" type="date" value="${escape(mondayEdit?.date||'')}" ${mondayEdit?'readonly':''} required></label><label class="v11field"><span>${text('ሠራተኛ','Staff member')}</span><select name="personId" required>${opts([['','—'],...monday.filter(p=>!mondayEdit||p.id===mondayEdit.personId).map(p=>[p.id,p.name])],mondayEdit?.personId||'')}</select></label><label class="v11field"><span>${text('ሁኔታ','Status')}</span><select name="status" required>${opts([['present',text('ተገኝቷል','Present')],['absent',text('አልተገኘም','Absent')],['late',text('ዘግይቷል','Late')],['permitted',text('በፈቃድ','Permitted') ]],mondayEdit?.status||'present')}</select></label><button class="btn" type="submit">${text('ረቂቅ አስቀምጥ','Save attendance draft')}</button></form></div>`:''}
  ${unlocked&&!state.offlineOnly?`<div class="v11box"><h2>${text('ሙሉ Offline የሥራ ቦታ','Extended offline workspace')}</h2><p>${text('በዚህ የታመነ መሣሪያ ብቻ የተፈቀዱ መዝገቦችን በEncryption አስቀምጥ። ሚስጥራዊ ሰነዶችና ፎቶዎች አይወርዱም።','On a trusted device only, opt in to encrypted authorized records, analytics and versioned draft edits. Confidential source documents and photos remain online.')}</p><button data-v="extended" data-enable="${vault.extendedEnabled(owner)?'no':'yes'}">${vault.extendedEnabled(owner)?text('ወደ ረቂቅ ብቻ ተመለስ','Disable extended workspace'):text('የOffline ሥራ ቦታ አንቃ','Enable extended workspace')}</button></div>`:''}
  ${offlinePolicyForm()}
@@ -423,7 +466,7 @@ async function loadMediaPreviews(){
  await Promise.all([next(),next(),next()]);
 }
 async function update(reuse=false){const epoch=viewEpoch;await load(reuse);if(epoch!==viewEpoch||!active)return;await render();}
-async function withBusy(fn){if(queueBusy)return;queueBusy=true;try{await fn();}catch(e){alertMsg(e.message,true);}finally{queueBusy=false;}}
+async function withBusy(fn){if(queueBusy)return;queueBusy=true;root.inert=true;root.setAttribute('aria-busy','true');try{await fn();}catch(e){alertMsg(e.message,true);}finally{queueBusy=false;root.inert=false;root.removeAttribute('aria-busy');}}
 function serializedForm(){const form=$('v11form');if(!form.reportValidity())return null;
  const selected=$('v11AuthorizedScope');const target=selected&&!editing?caps().createScopes?.[kind]?.[Number(selected.value)]:null;
  const payload={kind,scopeType:target?.scopeType||$('v11Scope').value,scopeId:target?.scopeId||$('v11ScopeId').value.trim(),data:state.offlineOnly&&editing?{...editing.data}:{}};
@@ -468,8 +511,14 @@ async function sync(){
   await vault.refreshVault(live);
   for(const draft of await vault.listDrafts(owner)){
    if(!store.hasSession()||!vault.vaultUnlocked(owner))break;
-   try{const p=draft.payload;await store.command(p.intent==='transition'?'v11.transition':p.kind==='mondayAttendance'?'record.save':'v11.save',p.intent==='transition'?{id:p.id,version:p.version,decision:p.decision,note:p.note}:p.kind==='mondayAttendance'?{bucket:'attendance',...p.data,...(p.id?{id:p.id,version:p.version}:{})}:p,draft.requestId);await vault.deleteDraft(owner,draft.id);count++;}
-   catch(e){let err=e,fields=[];if(e.message==='conflict'&&draft.base&&draft.payload.id&&!draft.payload.intent){
+   try{const p=draft.payload;
+    if(p.kind?.startsWith('legacy')){
+     const route={legacyReport:'report.save',legacyPlan:'plan.save',legacyProject:'record.save',legacyAnnouncement:'record.save',legacyDocument:'record.save',legacyComment:'comment.save',legacyReview:'review'}[p.kind];if(!route)throw Error('unknown');
+     const payload={...p.data,...(p.id?{id:p.id,version:p.version,...(['legacyReport','legacyPlan'].includes(p.kind)?{reviewVersion:p.reviewVersion}:{})}:{}),...(route==='record.save'?{bucket:legacyBucket[p.kind]}:{})};
+     await store.command(route,payload,draft.requestId);await vault.deleteDraft(owner,draft.id);count++;continue;
+    }
+    await store.command(p.intent==='transition'?'v11.transition':p.kind==='mondayAttendance'?'record.save':'v11.save',p.intent==='transition'?{id:p.id,version:p.version,decision:p.decision,note:p.note}:p.kind==='mondayAttendance'?{bucket:'attendance',...p.data,...(p.id?{id:p.id,version:p.version}:{})}:p,draft.requestId);await vault.deleteDraft(owner,draft.id);count++;}
+   catch(e){let err=e,fields=[];if(e.message==='conflict'&&draft.base&&draft.payload.id&&!draft.payload.intent&&!draft.payload.kind?.startsWith('legacy')){
     try{const fresh=await store.state();if(fresh.me.id!==owner||!vault.vaultUnlocked(owner))throw Error('forbidden');
      const merged=vault.mergeOfflineEdit(draft,fresh.v11?.records?.find(r=>r.id===draft.payload.id));fields=merged?.conflicts||[];
      if(merged?.payload){await store.command('v11.save',merged.payload,draft.requestId);await vault.deleteDraft(owner,draft.id);count++;continue;}
@@ -486,17 +535,26 @@ async function syncLegacy(){
  for(const draft of await pending()){const {id,ownerId,createdAt,isLocal,...payload}=draft;await store.command('v11.save',payload,id);await draftDelete(id);}
  await update();
 }
-window.addEventListener('online',()=>{if(!active)return;if(!store.hasSession()){section='offline';void render();return;}void (async()=>{await update();if(vault.vaultUnlocked(my().id))await sync();})().catch(e=>alertMsg(e.message,true));});
+window.addEventListener('online',()=>{if(!active)return;if(root.querySelector('#v11form:focus-within,.legacyOfflineForm:focus-within,.legacyOfflineReview:focus-within,.legacyOfflineComment:focus-within')){alertMsg(text('በመጀመሪያ የሚሞሉትን ቅጽ ያስቀምጡ።','Connection restored; save your current form before syncing.'));return;}if(!store.hasSession()){section='offline';void render();return;}void (async()=>{await update();if(vault.vaultUnlocked(my().id))await sync();})().catch(e=>alertMsg(e.message,true));});
 function enforceOfflineExpiry(){if(!active||!state?.offlineOnly)return;const current=vault.offlineState(my().id);if(!current&&state.snapshotAt||current&&(current.v11.records.length!==records().length||Object.keys(current.v11.capabilities.createScopes).length!==Object.keys(caps().createScopes||{}).length||current.offlineFiles.length!==(state.offlineFiles||[]).length||current.directory.length!==(state.directory||[]).length||current.mondayRecords.length!==(state.mondayRecords||[]).length)){editing=null;mondayEdit=null;void render();}}
 setInterval(enforceOfflineExpiry,30000);
-document.addEventListener('visibilitychange',()=>{if(document.hidden||!active||!store.shared)return;enforceOfflineExpiry();if(root.querySelector('#v11form'))return;if(state?.offlineOnly&&!navigator.onLine){void render();return;}if(navigator.onLine&&store.hasSession()&&!syncing&&vault.vaultUnlocked(my().id))void sync().catch(e=>alertMsg(e.message,true));});
-window.addEventListener('offline',()=>{if(active&&store.shared){if(root.querySelector('#v11form')){alertMsg(text('ግንኙነት ተቋርጧል፤ Offline ከነቃ ረቂቅዎን ያስቀምጡ።','Connection lost. Save your current form if offline storage is enabled.'));return;}void update().catch(e=>alertMsg(e.message,true));}});
+document.addEventListener('visibilitychange',()=>{if(document.hidden||!active||!store.shared)return;enforceOfflineExpiry();if(root.querySelector('#v11form,.legacyOfflineForm,.legacyOfflineReview,.legacyOfflineComment'))return;if(state?.offlineOnly&&!navigator.onLine){void render();return;}if(navigator.onLine&&store.hasSession()&&!syncing&&vault.vaultUnlocked(my().id))void sync().catch(e=>alertMsg(e.message,true));});
+window.addEventListener('offline',()=>{if(active&&store.shared){if(root.querySelector('#v11form,.legacyOfflineForm,.legacyOfflineReview,.legacyOfflineComment')){alertMsg(text('ግንኙነት ተቋርጧል፤ Offline ከነቃ ረቂቅዎን ያስቀምጡ።','Connection lost. Save your current form if offline storage is enabled.'));return;}void update().catch(e=>alertMsg(e.message,true));}});
 window.addEventListener('gaius:nexus-session-cleared',()=>vault.lockVault());
 
 root.addEventListener('submit',e=>{e.preventDefault();withBusy(async()=>{
+ if(e.target.matches('.legacyOfflineForm,.legacyOfflineReview,.legacyOfflineComment')){
+  const form=e.target,d=Object.fromEntries(new FormData(form)),meta=form.dataset;
+  let payload;
+  if(form.matches('.legacyOfflineReview'))payload={kind:'legacyReview',data:{...d,kind:meta.kind,id:meta.id,version:Number(meta.version),reviewVersion:Number(meta.reviewVersion)}};
+  else if(form.matches('.legacyOfflineComment'))payload={kind:'legacyComment',data:{...d,reportId:meta.id,visible:true}};
+  else payload={kind:meta.kind,data:d,...(meta.id?{id:meta.id,version:Number(meta.version),...(['legacyReport','legacyPlan'].includes(meta.kind)?{reviewVersion:Number(meta.reviewVersion)}:{})}:{})};
+  await vault.queueDraft(my().id,payload);legacyEdit=null;await render();alertMsg(text('በመሣሪያው ላይ ረቂቁ ተቀምጧል።','Encrypted draft saved; pending sync.'));return;
+ }
+ if(e.target.id==='offlineReauth'){const owner=my().id;const d=Object.fromEntries(new FormData(e.target));await store.login(d,{expectedOwner:owner});await update();window.dispatchEvent(new Event('gaius:online-restored'));if(vault.vaultUnlocked(owner))await sync();else alertMsg(text('የOffline ማከማቻዎን ክፈቱና ረቂቆቹን ያመሳስሉ።','Unlock the offline vault to sync saved drafts.'));return;}
  if(e.target.id==='offlinePolicyForm'){if(state.offlineOnly||!caps().director)throw Error('forbidden');const values=Object.fromEntries([...new FormData(e.target)].map(([k,v])=>[k,Number(v)]));await store.command('offline.policy.save',{values,version:Number(e.target.dataset.version)});await update();alertMsg(text('ቅንብሩ ተቀምጧል','Offline policy saved'));return;}
  if(e.target.id==='offlineMonday'){const data=Object.fromEntries(new FormData(e.target));await vault.queueDraft(my().id,{kind:'mondayAttendance',data:{...data,programType:'regular'},...(mondayEdit?{id:mondayEdit.id,version:mondayEdit._v}:{})});mondayEdit=null;await render();if(navigator.onLine&&!state.offlineOnly)await sync();return;}
- if(e.target.id==='offlineUnlock'){const owner=my().id,pass=$('offlinePassphrase').value;const live=state.offlineOnly?null:await store.state();if(live&&live.me.id!==owner)throw Error('Session changed');await vault.unlockVault(owner,pass,live);if(live)localStorage.setItem('gaius.offline.device',JSON.stringify({at:Date.now(),me:{id:owner}}));if(state.offlineOnly){state=vault.offlineState(owner)||state;}await render();if(!state.offlineOnly)await sync();return;}
+ if(e.target.id==='offlineUnlock'){const owner=my().id,pass=$('offlinePassphrase').value;const live=state.offlineOnly?null:await store.state();if(live&&live.me.id!==owner)throw Error('Session changed');await vault.unlockVault(owner,pass,live);if(live)localStorage.setItem('gaius.offline.device',JSON.stringify({at:Date.now(),me:{id:owner}}));if(state.offlineOnly){state=vault.offlineState(owner)||state;}if(!state.offlineOnly&&(await vault.listDrafts(owner)).length)await sync();else await render();return;}
  if(e.target.id==='v11form')await saveRecord();
  if(e.target.id==='nexusSourceImport'){
   if(my().role!=='country_director'||!store.shared)throw Error('directorPrivateImportRequired');
@@ -548,10 +606,12 @@ root.addEventListener('change',e=>{
  if(e.target.id==='v11Kind'){kind=e.target.value;editing=null;render();}else if(e.target.id==='v11Scope'){const x=$('v11ScopeId');if(x)x.value=e.target.value==='personal'?my().id:e.target.value==='hq'?my().department||'':e.target.value==='center'?my().center||'':'org';}});
 root.addEventListener('click',e=>{const b=e.target.closest('[data-v]');if(!b)return;
  withBusy(async()=>{const op=b.dataset.v,id=b.dataset.id;
- if(op==='reconnect'){if(!navigator.onLine)throw Error('offline');if(!store.hasSession()){$('logout').click();return;}await update();if(vault.vaultUnlocked(my().id))await sync();return;}
+ if(op==='reconnect'){if(!navigator.onLine)throw Error('offline');if(!store.hasSession()){section='offline';await render();alertMsg(text('ለማመሳሰል Online ይግቡ።','Sign in online to sync; drafts are retained.'));return;}await update();if(vault.vaultUnlocked(my().id))await sync();return;}
  if(op==='extended'){if(state.offlineOnly||!store.hasSession())throw Error('offline');const live=await store.state();if(live.me.id!==my().id)throw Error('forbidden');if(b.dataset.enable==='yes'&&!confirm(text('ይህ የግል የታመነ መሣሪያ ነው?','Enable encrypted offline records on this trusted device?')))return;await vault.setExtendedWorkspace(live,b.dataset.enable==='yes');await render();return;}
  if(op==='editMonday'){mondayEdit=state.mondayRecords?.find(r=>r.id===id);if(!mondayEdit)throw Error('missing');section='offline';await render();return;}
- if(op==='legacyTab'&&section==='cachedLegacy'){legacyTab=b.dataset.page;await render();return;}
+ if(op==='legacyTab'&&section==='cachedLegacy'){legacyTab=b.dataset.page;legacyEdit=null;await render();return;}
+ if(op==='legacyEdit'){legacyEdit={kind:b.dataset.kind,id};await render();root.querySelector('.legacyOfflineForm[data-kind="'+b.dataset.kind+'"]')?.scrollIntoView({block:'start'});return;}
+ if(op==='legacyCancel'){legacyEdit=null;await render();return;}
  if(op==='close'&&state.offlineOnly){
   legacyTab='dashboard';legacyMonth='';
   if(availableSections().includes('cachedLegacy')){
@@ -576,10 +636,10 @@ root.addEventListener('click',e=>{const b=e.target.closest('[data-v]');if(!b)ret
  if(op==='transition'){await transition(id,b.dataset.decision);return;}
  if(op==='export'){exportRecord(id,b.dataset.as);return;}
  if(op==='legacy-export'){exportLegacy(Number(b.dataset.legacy),b.dataset.as);return;}
- if(op==='offlineSignIn'){document.getElementById('logout').click();return;}
+ if(op==='offlineSignIn'){section='offline';await render();return;}
  if(op==='sync'){await sync();return;}
  if(op==='syncLegacy'){await syncLegacy();return;}
- if(op==='lockOffline'){mondayEdit=null;if(sessionStorage.getItem('gaius.offline.localSession')){$('logout').click();return;}vault.lockVault();if(state.offlineOnly){state={me:{id:my().id},offlineOnly:true,v11:{records:[],files:[],capabilities:{}}};}await render();return;}
+ if(op==='lockOffline'){mondayEdit=null;legacyEdit=null;vault.lockVault();if(state.offlineOnly){state={me:{id:my().id},offlineOnly:true,v11:{records:[],files:[],capabilities:{}}};}await render();return;}
  if(op==='dropEncrypted'){if(confirm(text('ረቂቁን ልሰርዝ?','Discard this unsynced draft?'))){await vault.deleteDraft(my().id,id);await render();}return;}
  if(op==='dropDraft'){if(confirm(text('ያልተላከ ረቂቅ ልሰርዝ?','Delete the unsynced local draft?'))){await draftDelete(id);await render();}return;}
  if(op==='fileReview'){if(b.dataset.decision==='removed'&&!confirm(text('ፋይሉ ከR2 ማከማቻ ይሰረዛል። ለመቀጠል እርግጠኛ ነህ?','The file will be deleted from storage. Continue?')))return;await store.command('v11.fileReview',{id,decision:b.dataset.decision});await update();alertMsg('Updated');return;}

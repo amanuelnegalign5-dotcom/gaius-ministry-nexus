@@ -53,7 +53,7 @@ export class MinistryWorkspace {
       let data;try{data=JSON.parse(raw||'{}');}catch{throw new AppError('unknown',400);}
       if(!data||Array.isArray(data)||typeof data!=='object')throw new AppError('unknown',400);
       const token=(request.headers.get('Authorization')||'').replace(/^Bearer /,'');
-      if(route==='info')return json({...(await handle(this.db,route,data,{token})),emailRecovery:recoveryReady(this.env)});
+      if(route==='info')return json({...(await handle(this.db,route,data,{token})),emailRecovery:recoveryReady(this.env),directorMail:{country_director:recoveryReady(this.env)&&!!this.env.SETUP_KEY&&!!this.env.COUNTRY_DIRECTOR_EMAIL,international_director:recoveryReady(this.env)&&!!this.env.SETUP_KEY&&!!this.env.INTERNATIONAL_DIRECTOR_EMAIL}});
       if(route==='login' && typeof data.username==='string'){
         // A single attacker must not be able to lock a real user out: the tight limit is per
         // username AND source address; the per-username ceiling only stops wide distributed guessing.
