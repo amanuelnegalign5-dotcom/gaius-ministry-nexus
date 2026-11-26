@@ -69,7 +69,7 @@ test('extended workspace restores director navigation, reads cached records and 
  const record={id:'report-one',kind:'monthly',scopeType:'hq',scopeId:'Media',ownerId:me.id,ownerName:me.name,status:'draft',_v:4,data:{title:'Cached authorized report',month:'2026-11',activity:'Training',result:'Initial result'},actions:{edit:true,submit:true}};
  const fileBody='%PDF-1.4\nSynthetic classified document';
  const file={id:'approved-manual',name:'Approved manual.pdf',type:'application/pdf',size:new TextEncoder().encode(fileBody).length,status:'approved',scopeType:'organization',scopeId:'org',offlineEligible:true,offlineAllowed:true,createdAt:'2026-11-25T00:00:00.000Z',updatedAt:'2026-11-25T00:00:00.000Z'};
- const snapshot={me,authorization:{legacyPages:['dashboard','reports'],offlineMondayRoster:[]},directory:[me],former:[],users:[],reports:[],plans:[],reviews:[],comments:[],attendance:[],projects:[],announcements:[],documents:[],audit:[],v11:{records:[record],files:[file],capabilities:{director:true,oversight:true,allowedKinds:['monthly'],readableKinds:['monthly','manuals'],createScopes:{monthly:[{scopeType:'hq',scopeId:'Media'}]},defaultScopeType:'organization',defaultScopeId:'org',canUploadFile:true,hqReports:true}},services:{mediaUploads:true,maxFileBytes:1048576}};
+ const snapshot={me,authorization:{legacyPages:['dashboard','reports','board'],offlineMondayRoster:[]},directory:[me],former:[],users:[],reports:[{id:'legacy-report',title:'Saved legacy report',month:'2026-11',status:'approved'}],plans:[],reviews:[],comments:[],attendance:[],projects:[],announcements:[],documents:[],audit:[],v11:{records:[record],files:[file],capabilities:{director:true,oversight:true,allowedKinds:['monthly'],readableKinds:['monthly','manuals'],createScopes:{monthly:[{scopeType:'hq',scopeId:'Media'}]},defaultScopeType:'organization',defaultScopeId:'org',canUploadFile:true,hqReports:true}},services:{mediaUploads:true,maxFileBytes:1048576}};
  let writes=[];
  await context.route(api+'/**',async route=>{
   const path=new URL(route.request().url()).pathname,headers={'access-control-allow-origin':'*','access-control-allow-headers':'authorization,content-type','access-control-allow-methods':'POST,OPTIONS'};
@@ -98,6 +98,16 @@ test('extended workspace restores director navigation, reads cached records and 
  await page.locator('#gaiusV11 .v11nav [data-section="files"]').click();
  await expect(page.locator('#gaiusV11')).toContainText('Approved manual.pdf');
  expect(await page.evaluate(async()=>{const v=await import('./gaius-offline-vault.js');return (await v.readCachedFile('director-offline','approved-manual')).blob.text();})).toBe(fileBody);
+ await page.locator('#gaiusV11 [data-v="close"]').click();
+ await expect(page.getByRole('heading',{name:'Gaius dashboard',exact:true})).toBeVisible();
+ const legacyNav=page.locator('#gaiusV11 [data-v="legacyTab"]');
+ await expect(legacyNav).toHaveCount(3);
+ await page.locator('#legacyOfflineMonth').selectOption('2026-11');
+ await legacyNav.filter({hasText:'Reports'}).click();
+ await expect(page.locator('#gaiusV11 summary')).toHaveText('Saved legacy report');
+ await legacyNav.filter({hasText:/board/i}).click();
+ await expect(page.locator('#gaiusV11')).toContainText('Sign in online to use this page.');
+ await page.locator('#gaiusV11 button[data-section="director"]').click();
  await page.locator('#gaiusV11 .v11nav [data-section="director"]').click();
  await expect(page.locator('#gaiusV11 .v11nav [data-section="director"]')).toHaveClass('on');
  await page.locator('#gaiusV11 .v11nav [data-section="analytics"]').click();
