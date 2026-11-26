@@ -69,7 +69,7 @@ test('extended workspace restores director navigation, reads cached records and 
  const record={id:'report-one',kind:'monthly',scopeType:'hq',scopeId:'Media',ownerId:me.id,ownerName:me.name,status:'draft',_v:4,data:{title:'Cached authorized report',month:'2026-11',activity:'Training',result:'Initial result'},actions:{edit:true,submit:true}};
  const fileBody='%PDF-1.4\nSynthetic classified document';
  const file={id:'approved-manual',name:'Approved manual.pdf',type:'application/pdf',size:new TextEncoder().encode(fileBody).length,status:'approved',scopeType:'organization',scopeId:'org',offlineEligible:true,offlineAllowed:true,createdAt:'2026-11-25T00:00:00.000Z',updatedAt:'2026-11-25T00:00:00.000Z'};
- const snapshot={me,authorization:{legacyPages:['dashboard','reports','board'],offlineMondayRoster:[]},directory:[me],former:[],users:[],reports:[{id:'legacy-report',title:'Saved legacy report',month:'2026-11',status:'approved'}],plans:[],reviews:[],comments:[],attendance:[],projects:[],announcements:[],documents:[],audit:[],v11:{records:[record],files:[file],capabilities:{director:true,oversight:true,allowedKinds:['monthly'],readableKinds:['monthly','manuals'],createScopes:{monthly:[{scopeType:'hq',scopeId:'Media'}]},defaultScopeType:'organization',defaultScopeId:'org',canUploadFile:true,hqReports:true}},services:{mediaUploads:true,maxFileBytes:1048576}};
+ const snapshot={me,authorization:{legacyPages:['dashboard','reports','reportEntry','board'],offlineMondayRoster:[]},directory:[me],former:[],users:[],reports:[{id:'legacy-report',title:'Saved legacy report',month:'2026-11',status:'approved'}],plans:[],reviews:[],comments:[],attendance:[],projects:[],announcements:[],documents:[],audit:[],v11:{records:[record],files:[file],capabilities:{director:true,oversight:true,allowedKinds:['monthly'],readableKinds:['monthly','manuals'],createScopes:{monthly:[{scopeType:'hq',scopeId:'Media'}]},defaultScopeType:'organization',defaultScopeId:'org',canUploadFile:true,hqReports:true}},services:{mediaUploads:true,maxFileBytes:1048576}};
  let writes=[];
  await context.route(api+'/**',async route=>{
   const path=new URL(route.request().url()).pathname,headers={'access-control-allow-origin':'*','access-control-allow-headers':'authorization,content-type','access-control-allow-methods':'POST,OPTIONS'};
@@ -77,7 +77,7 @@ test('extended workspace restores director navigation, reads cached records and 
   if(path.endsWith('/info'))return route.fulfill({json:{bootstrap:false,emailRecovery:false},headers});
   if(path.endsWith('/state'))return route.fulfill({json:snapshot,headers});
   if(path.endsWith('/file/download'))return route.fulfill({status:200,body:fileBody,headers:{...headers,'content-type':'application/pdf'}});
-  if(path.endsWith('/command')){const data=route.request().postDataJSON();if(data.action==='v11.save'){writes.push(data);if(data.payload.version===5){record._v=6;record.data=data.payload.data;return route.fulfill({json:{id:record.id},headers});}return route.fulfill({status:409,json:{error:'conflict'},headers});}}
+  if(path.endsWith('/command')){const data=route.request().postDataJSON();if(data.action==='report.save'||data.action==='record.save'){writes.push(data);return route.fulfill({json:{id:'legacy-synced'},headers});}if(data.action==='v11.save'){writes.push(data);if(data.payload.version===5){record._v=6;record.data=data.payload.data;return route.fulfill({json:{id:record.id},headers});}return route.fulfill({status:409,json:{error:'conflict'},headers});}}
   return route.fulfill({status:400,json:{error:'unknown'},headers});
  });
  await page.addInitScript(({api})=>{localStorage.gLang='en';sessionStorage.setItem('gaius.v10.session:'+api,'synthetic-director-token');},{api});
@@ -101,7 +101,7 @@ test('extended workspace restores director navigation, reads cached records and 
  await page.locator('#gaiusV11 [data-v="close"]').click();
  await expect(page.getByRole('heading',{name:'Gaius dashboard',exact:true})).toBeVisible();
  const legacyNav=page.locator('#gaiusV11 [data-v="legacyTab"]');
- await expect(legacyNav).toHaveCount(3);
+ await expect(legacyNav).toHaveCount(4);
  await page.locator('#legacyOfflineMonth').selectOption('2026-11');
  await legacyNav.filter({hasText:'Reports'}).click();
  await expect(page.locator('#gaiusV11 summary')).toHaveText('Saved legacy report');
@@ -138,4 +138,29 @@ test('extended workspace restores director navigation, reads cached records and 
  expect(writes.at(-1).payload.data.title).toBe('Changed online title');
  expect(writes.at(-1).payload.data.result).toBe('Edited offline');
  expect(writes.at(-1).requestId).toBe(writes[0].requestId);
+ const prior=writes.length;
+ await context.setOffline(true);
+ await page.locator('#gaiusV11 [data-v="close"]').click();
+ await page.locator('#gaiusV11 [data-v="legacyTab"][data-page="reportEntry"]').click();
+ const form=page.locator('.legacyOfflineForm[data-kind="legacyReport"]');
+ await form.locator('[name="department"]').fill('Media');
+ await form.locator('[name="activity"]').fill('Legacy offline report');
+ await form.locator('[name="result"]').fill('Legacy draft result');
+ await form.locator('button[type="submit"]').click();
+ await expect(page.locator('#v11notice')).toContainText('Encrypted draft saved');
+ await page.locator('#gaiusV11 [data-v="legacyTab"][data-page="board"]').click();
+ const announcement=page.locator('.legacyOfflineForm[data-kind="legacyAnnouncement"]');
+ await announcement.locator('[name="title"]').fill('Offline announcement');
+ await announcement.locator('[name="body"]').fill('Team update');
+ await announcement.locator('button[type="submit"]').click();
+ await expect(page.locator('#v11notice')).toContainText('Encrypted draft saved');
+ await page.getByRole('button',{name:'Pending drafts',exact:true}).click();
+ await expect(page.locator('#gaiusV11 [data-v="dropEncrypted"]')).toHaveCount(2);
+ expect(writes.length).toBe(prior);
+ await context.setOffline(false);
+ await expect.poll(()=>writes.length).toBe(prior+2);
+ expect(writes.slice(prior).map(w=>w.action)).toEqual(['report.save','record.save']);
+ expect(writes[prior].payload.activity).toBe('Legacy offline report');
+ expect(writes[prior+1].payload.bucket).toBe('announcements');
+ await expect(page.locator('#gaiusV11 [data-v="dropEncrypted"]')).toHaveCount(0);
 });
