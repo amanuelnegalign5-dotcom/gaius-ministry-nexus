@@ -3,6 +3,12 @@ name: Deploy GAIUS Nexus Backend
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'gaius-core.js'
+      - 'gaius-worker.js'
+      - '.github/workflows/deploy-backend.yml'
 
 permissions:
   contents: read
@@ -19,6 +25,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+
+      - name: Verify backend and role regressions
+        run: npm test
 
       - name: Deploy to Cloudflare
         run: npx --yes wrangler@4 deploy --config wrangler.jsonc
