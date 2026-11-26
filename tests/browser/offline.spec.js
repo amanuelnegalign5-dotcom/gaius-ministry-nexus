@@ -106,7 +106,7 @@ test('extended workspace restores director navigation, reads cached records and 
  await legacyNav.filter({hasText:'Reports'}).click();
  await expect(page.locator('#gaiusV11 summary')).toHaveText('Saved legacy report');
  await legacyNav.filter({hasText:'Announcement board'}).click();
- await expect(page.locator('#gaiusV11')).toContainText('Sign in online to use this page.');
+ await expect(page.locator('#gaiusV11 .legacyOfflineForm[data-kind="legacyAnnouncement"]')).toBeVisible();
  await page.locator('#gaiusV11 button[data-section="director"]').click();
  await page.locator('#gaiusV11 .v11nav [data-section="director"]').click();
  await expect(page.locator('#gaiusV11 .v11nav [data-section="director"]')).toHaveClass('on');
