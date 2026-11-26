@@ -135,7 +135,7 @@ const mine=()=>caps().defaultScopeType||(my().center?'center':my().department?'h
 const appStrings={cachedLegacy:['የቀድሞ መዝገቦች','Previous workspace'],director:['የዳይሬክተር ሥራ','Director workspace'],analytics:['የማዕከላት ትንታኔ','Center analytics'],overview:['ዋና እይታ','Overview'],records:['ሥራ መዝገቦች','Operations'],files:['የሰነድ ማከማቻ','File uploads'],offline:['ያልተላኩ ረቂቆች','Offline drafts'],governance:['የጋይዮስ አስተዳደር','Governance'],delegation:['ውክልናና ፈቃድ','Delegation & permissions'],reference:['የድርጅት ስሞች','Official names']};
 const tr=s=>appStrings[s]?(localLang()==='am'?appStrings[s][0]:appStrings[s][1]):s;
 function availableSections(){if(state?.offlineOnly){const n=state.offlineNav||{};if(state.extended)return [...(n.director?['director']:[]),...(n.director||n.oversight?['analytics']:[]),'overview',...(myAvailableKinds().length||state.onlineKinds?.length?['records']:[]),...(n.files?['files']:[]),...(n.governance?['governance']:[]),...(n.director?['delegation']:[]),...(n.legacyPages?.length?['cachedLegacy']:[]),'offline','reference'];return [...(myAvailableKinds().length?['records']:[]),'offline',...(vault.vaultUnlocked(my().id)&&my().role?['reference']:[])];}return Object.keys(appStrings).filter(x=>x==='cachedLegacy'?false:x==='director'?caps().director:x==='delegation'?caps().director&&store.shared&&!state.offlineOnly:x==='analytics'?(caps().director||caps().oversight):x==='records'?myAvailableKinds().length>0:x==='files'?(caps().canUploadFile||(state?.v11?.files||[]).length>0):x==='governance'?store.shared&&!state.offlineOnly&&(caps().director||mine()==='center'||!!my().center||caps().hqReports||eligibleGrantRecipient(my())):true);}
-function frame(content){const offlineBanner=state?.offlineOnly?'<div class="v11guide" role="status">'+text('Offline — የተቀመጠ መረጃ፤ ለውጦች የServer ማረጋገጫ ይጠብቃሉ።','Offline — last saved data; changes await server confirmation.')+(state.snapshotAt?' · '+escape(new Date(state.snapshotAt).toLocaleString()):'')+' <button type="button" data-v="reconnect">'+text('ግንኙነት ፈትሽ','Reconnect')+'</button></div>':'';root.innerHTML=`<div class="v11wrap"><div class="v11top"><div class="v11identity"><img class="v11logo" src="./icons/official-logo.jpg" alt="Gaius Ministry logo"><div><h1>Gaius Nexus <small>v12.1.0</small></h1><p>${text('የድርጅት አመራር፣ እቅድ፣ ሪፖርትና ክትትል','Ministry leadership, planning, reporting and follow-up')}</p></div></div><button type="button" class="btn ghost" data-v="close" ${state?.offlineOnly?'hidden':''}>${text('ወደ v10 ገጾች','Back to existing pages')}</button></div>
+function frame(content){const offlineBanner=state?.offlineOnly?'<div class="v11guide" role="status">'+text('Offline — የተቀመጠ መረጃ፤ ለውጦች የServer ማረጋገጫ ይጠብቃሉ።','Offline — last saved data; changes await server confirmation.')+(state.snapshotAt?' · '+escape(new Date(state.snapshotAt).toLocaleString()):'')+' <button type="button" data-v="reconnect">'+text('ግንኙነት ፈትሽ','Reconnect')+'</button></div>':'';root.innerHTML=`<div class="v11wrap"><div class="v11top"><div class="v11identity"><img class="v11logo" src="./icons/official-logo.jpg" alt="Gaius Ministry logo"><div><h1>Gaius Nexus <small>v12.1.0</small></h1><p>${text('የድርጅት አመራር፣ እቅድ፣ ሪፖርትና ክትትል','Ministry leadership, planning, reporting and follow-up')}</p></div></div><button type="button" class="btn ghost" data-v="close">${text('ወደ ነባር ገጾች ተመለስ','Back to existing pages')}</button></div>
   <div class="v11nav">${availableSections().map(x=>`<button class="${section===x?'on':''}" type="button" data-v="section" data-section="${x}">${tr(x)}${state.offlineOnly&&['governance','delegation'].includes(x)?' · '+text('Online ያስፈልጋል','Online required'):''}</button>`).join('')}</div><div id="v11notice" class="v11notice" hidden></div><div class="v11content">${offlineBanner}${content}</div></div>`;}
 function tile(title,value,desc=''){return `<div class="v11tile"><span>${escape(title)}</span><strong>${escape(value)}</strong><small>${escape(desc)}</small></div>`;}
 function dashboard(){const all=records().filter(r=>r.kind!=='centers'&&r.kind!=='centerUnits');const approved=all.filter(r=>r.status==='approved'),pending=all.filter(r=>r.status==='submitted');
@@ -514,7 +514,19 @@ root.addEventListener('click',e=>{const b=e.target.closest('[data-v]');if(!b)ret
  if(op==='reconnect'){if(!navigator.onLine)throw Error('offline');if(!store.hasSession()){$('logout').click();return;}await update();if(vault.vaultUnlocked(my().id))await sync();return;}
  if(op==='extended'){if(state.offlineOnly||!store.hasSession())throw Error('offline');const live=await store.state();if(live.me.id!==my().id)throw Error('forbidden');if(b.dataset.enable==='yes'&&!confirm(text('ይህ የግል የታመነ መሣሪያ ነው?','Enable encrypted offline records on this trusted device?')))return;await vault.setExtendedWorkspace(live,b.dataset.enable==='yes');await render();return;}
  if(op==='editMonday'){mondayEdit=state.mondayRecords?.find(r=>r.id===id);if(!mondayEdit)throw Error('missing');section='offline';await render();return;}
- if(op==='close'&&state.offlineOnly)return;
+ if(op==='close'&&state.offlineOnly){
+  if(availableSections().includes('cachedLegacy')){
+   editing=null;
+   section='cachedLegacy';
+   await render();
+  }else{
+   section='offline';
+   editing=null;
+   await render();
+   alertMsg(text('ነባር ገጾችን ለመክፈት Online ይግቡ። የተፈቀዱ መዝገቦችን Offline ለማየት ሙሉ Offline የሥራ ቦታውን Online ሳሉ ያንቁ።','Sign in online to open existing pages. To see eligible saved records offline, enable the extended workspace while online.'));
+  }
+  return;
+ }
  if(op==='close'){close();return;}
  if(op==='showCenter'){selectedCenter=b.dataset.center;section='analytics';render();return;}
  if(op==='openKind'){if(state.offlineOnly&&!myAvailableKinds().includes(b.dataset.kind)&&!state.onlineKinds?.includes(b.dataset.kind))throw Error(text('ይህ ክፍል Online ይፈልጋል','This module requires online access'));kind=b.dataset.kind;editing=null;section='records';await render();return;}
