@@ -44,10 +44,11 @@ export const shared=!!api;
 export const localArchive=!!configured&&!shared;
 const tokenKey='gaius.v10.session:'+ (api||'local');
 // Persistent sign-in on this origin; explicit logout clears both stores.
-const readToken=()=>sessionStorage.getItem(tokenKey)||localStorage.getItem(tokenKey);
+const readToken=()=>shared?(localStorage.getItem(tokenKey)||sessionStorage.getItem(tokenKey)):sessionStorage.getItem(tokenKey);
 function rememberToken(token){sessionStorage.setItem(tokenKey,token);if(shared)localStorage.setItem(tokenKey,token);}
 export function hasSession(){return !!(readToken()||(!shared&&sessionStorage.me));}
 let stateCache=null,stateFlight=null,stateGeneration=0;
+if(shared)window.addEventListener('storage',e=>{if(e.key!==tokenKey||e.oldValue===e.newValue)return;sessionStorage.removeItem(tokenKey);sessionStorage.removeItem('gaius.offline.localSession');sessionStorage.removeItem('gaius.v11.offlineIdentity');invalidateState();window.location.reload();});
 function invalidateState(){stateGeneration++;stateCache=null;stateFlight=null;}
 export function clearOnlineSession(){invalidateState();sessionStorage.removeItem(tokenKey);localStorage.removeItem(tokenKey);}
 export function clearSession(){clearOnlineSession();sessionStorage.removeItem('gaius.offline.localSession');sessionStorage.removeItem('gaius.v11.offlineIdentity');localStorage.removeItem('gaius.offline.device');sessionStorage.removeItem(tokenKey);if(!shared)sessionStorage.removeItem('me');}
