@@ -31,7 +31,7 @@ async function load(reuse=false){
  if(localOwner&&!store.hasSession()){
   const local=vault.offlineState(localOwner);if(!local&&!vault.vaultUnlocked(localOwner))throw Error('offlineLoginExpired');
   state=local||{me:{id:localOwner},offlineOnly:true,v11:{records:[],files:[],capabilities:{}}};
-  if(!state.extended&&!['records','offline','reference'].includes(section))section='offline';return state;
+  if(!state.extended&&!['records','offline','reference','cachedLegacy'].includes(section))section='offline';return state;
  }
  try{
   if(store.shared&&!navigator.onLine)throw Error('offline');
@@ -47,7 +47,7 @@ async function load(reuse=false){
   if(!store.hasSession()&&!localStorage.getItem('gaius.offline.device'))throw e;
   if(!cached?.me||!localStorage.getItem('gaius.offline.device')&&(Date.now()<cached.at||Date.now()-cached.at>86400000))throw Error(text('ያለ ኢንተርኔት መለያ ማረጋገጥ አልተቻለም','Offline identity expired; reconnect to verify'));
   state=vault.offlineState(cached.me.id)||{me:cached.me,directory:[],v11:{records:[],files:[],capabilities:{}},offlineOnly:true};
-  if(!state.extended&&!['records','offline','reference'].includes(section))section='offline';
+  if(!state.extended&&!['records','offline','reference','cachedLegacy'].includes(section))section='offline';
  }
  return state;
 }
@@ -134,7 +134,7 @@ const my=()=>state?.me||{};const caps=()=>state?.v11?.capabilities||{};const rec
 const mine=()=>caps().defaultScopeType||(my().center?'center':my().department?'hq':'personal');
 const appStrings={cachedLegacy:['የቀድሞ መዝገቦች','Previous workspace'],director:['የዳይሬክተር ሥራ','Director workspace'],analytics:['የማዕከላት ትንታኔ','Center analytics'],overview:['ዋና እይታ','Overview'],records:['ሥራ መዝገቦች','Operations'],files:['የሰነድ ማከማቻ','File uploads'],offline:['ያልተላኩ ረቂቆች','Offline drafts'],governance:['የጋይዮስ አስተዳደር','Governance'],delegation:['ውክልናና ፈቃድ','Delegation & permissions'],reference:['የድርጅት ስሞች','Official names']};
 const tr=s=>appStrings[s]?(localLang()==='am'?appStrings[s][0]:appStrings[s][1]):s;
-function availableSections(){if(state?.offlineOnly){const n=state.offlineNav||{};if(state.extended)return [...(n.director?['director']:[]),...(n.director||n.oversight?['analytics']:[]),'overview',...(myAvailableKinds().length||state.onlineKinds?.length?['records']:[]),...(n.files?['files']:[]),...(n.governance?['governance']:[]),...(n.director?['delegation']:[]),...(n.legacyPages?.length?['cachedLegacy']:[]),'offline','reference'];return [...(myAvailableKinds().length?['records']:[]),'offline',...(vault.vaultUnlocked(my().id)&&my().role?['reference']:[])];}return Object.keys(appStrings).filter(x=>x==='cachedLegacy'?false:x==='director'?caps().director:x==='delegation'?caps().director&&store.shared&&!state.offlineOnly:x==='analytics'?(caps().director||caps().oversight):x==='records'?myAvailableKinds().length>0:x==='files'?(caps().canUploadFile||(state?.v11?.files||[]).length>0):x==='governance'?store.shared&&!state.offlineOnly&&(caps().director||mine()==='center'||!!my().center||caps().hqReports||eligibleGrantRecipient(my())):true);}
+function availableSections(){if(state?.offlineOnly){const n=state.offlineNav||{};if(state.extended)return [...(n.director?['director']:[]),...(n.director||n.oversight?['analytics']:[]),'overview',...(myAvailableKinds().length||state.onlineKinds?.length?['records']:[]),...(n.files?['files']:[]),...(n.governance?['governance']:[]),...(n.director?['delegation']:[]),...(state.snapshotAt?['cachedLegacy']:[]),'offline','reference'];return [...(state.snapshotAt?['cachedLegacy']:[]),...(myAvailableKinds().length?['records']:[]),'offline',...(vault.vaultUnlocked(my().id)&&my().role?['reference']:[])];}return Object.keys(appStrings).filter(x=>x==='cachedLegacy'?false:x==='director'?caps().director:x==='delegation'?caps().director&&store.shared&&!state.offlineOnly:x==='analytics'?(caps().director||caps().oversight):x==='records'?myAvailableKinds().length>0:x==='files'?(caps().canUploadFile||(state?.v11?.files||[]).length>0):x==='governance'?store.shared&&!state.offlineOnly&&(caps().director||mine()==='center'||!!my().center||caps().hqReports||eligibleGrantRecipient(my())):true);}
 function frame(content){const offlineBanner=state?.offlineOnly?'<div class="v11guide" role="status">'+text('Offline — የተቀመጠ መረጃ፤ ለውጦች የServer ማረጋገጫ ይጠብቃሉ።','Offline — last saved data; changes await server confirmation.')+(state.snapshotAt?' · '+escape(new Date(state.snapshotAt).toLocaleString()):'')+' <button type="button" data-v="reconnect">'+text('ግንኙነት ፈትሽ','Reconnect')+'</button></div>':'';root.innerHTML=`<div class="v11wrap"><div class="v11top"><div class="v11identity"><img class="v11logo" src="./icons/official-logo.jpg" alt="Gaius Ministry logo"><div><h1>Gaius Nexus <small>v12.1.0</small></h1><p>${text('የድርጅት አመራር፣ እቅድ፣ ሪፖርትና ክትትል','Ministry leadership, planning, reporting and follow-up')}</p></div></div><button type="button" class="btn ghost" data-v="close">${text('ወደ ነባር ገጾች ተመለስ','Back to existing pages')}</button></div>
   <div class="v11nav">${availableSections().map(x=>`<button class="${section===x?'on':''}" type="button" data-v="section" data-section="${x}">${tr(x)}${state.offlineOnly&&['governance','delegation'].includes(x)?' · '+text('Online ያስፈልጋል','Online required'):''}</button>`).join('')}</div><div id="v11notice" class="v11notice" hidden></div><div class="v11content">${offlineBanner}${content}</div></div>`;}
 function tile(title,value,desc=''){return `<div class="v11tile"><span>${escape(title)}</span><strong>${escape(value)}</strong><small>${escape(desc)}</small></div>`;}
@@ -273,10 +273,46 @@ function offlinePolicyForm(){
  const labels={country_director:['የሀገር ዳይሬክተር','Country director'],international_director:['ዓለም አቀፍ ዳይሬክተር','International director'],hq:['HQ መሪዎችና ሠራተኞች','HQ leaders and staff'],center:['የማዕከል መሪዎች','Center leaders'],volunteer:['በጎ ፈቃደኞች','Volunteers'],operations:['የሥራ ረቂቅ ከፍተኛ ጊዜ','Operations maximum'],attendance:['የመገኘትና የተጠበቀ መረጃ ከፍተኛ ጊዜ','Attendance & restricted records maximum']};
  return '<div class="v11box"><h2>'+text('የOffline ፈቃድ ቅንብር','Offline access policy')+'</h2><p>'+text('የሚናና የመረጃ ደረጃ ገደብ ከሁለቱ አነስተኛው ይሠራል። ጊዜያዊ ውክልና ቀድሞ ሊያበቃ ይችላል።','The shorter role and data-category limit applies. A temporary grant may expire sooner.')+'</p><form id="offlinePolicyForm" data-version="'+Number(p.version)+'">'+Object.entries(labels).map(([key,label])=>'<label class="v11field"><span>'+text(...label)+'</span><select name="'+key+'">'+opts(OFFLINE_POLICY_OPTIONS.filter(n=>key!=='attendance'||n<=7).map(n=>[String(n),n===0?text('ተዘግቷል','Disabled'):n+' '+text('ቀናት','days')]),String(p.values[key]))+'</select></label>').join('')+'<button class="btn" type="submit">'+text('ቅንብር አስቀምጥ','Save offline policy')+'</button></form><p>'+text('ለOffline ላሉ መሣሪያዎች ለውጡ ሲገናኙ ይደርሳል።','Policy changes reach disconnected devices when they reconnect.')+'</p></div>';
 }
+let legacyTab='dashboard',legacyMonth='';
 function cachedLegacyScreen(){
- const items=state.legacy||{},rows=state.mondayRecords||[];
- const group=(name,records)=>'<div class="v11box"><h2>'+escape(name)+' ('+records.length+')</h2>'+records.map(r=>'<article class="v11record"><b>'+escape(r.title||r.activity||r.id)+'</b><details><summary>'+text('ዝርዝር','Details')+'</summary>'+Object.entries(r).filter(([k,v])=>v!=null&&v!==''&&k!=='id').map(([k,v])=>'<p><b>'+escape(k)+':</b> '+escape(v)+'</p>').join('')+'</details></article>').join('')+'</div>';
- frame(group(text('የቀድሞ ሪፖርቶች','Previous reports'),items.reports||[])+group(text('የቀድሞ ዕቅዶች','Previous plans'),items.plans||[])+'<div class="v11box"><h2>'+text('የሰኞ መገኘት','Monday attendance')+'</h2>'+rows.map(r=>'<article class="v11record">'+escape((state.directory||[]).find(p=>p.id===r.personId)?.name||r.personId)+' · '+escape(r.date)+' · '+escape(r.status)+(vault.mondayRoster(my().id).some(p=>p.id===r.personId)?'<button data-v="editMonday" data-id="'+escape(r.id)+'">'+text('አርትዕ','Edit')+'</button>':'')+'</article>').join('')+'</div>');
+ const labels=window.GAIUS_V10.translations[localLang()];
+ const allowed=state.offlineNav?.legacyPages||[];
+ const tabs=[...app.querySelectorAll('.tabs [data-page]')].filter(b=>allowed.includes(b.dataset.page));
+ const names=Object.fromEntries(tabs.map(b=>[b.dataset.page,labels[b.dataset.i]||b.textContent]));
+ const home=names.dashboard?'dashboard':tabs[0]?.dataset.page;
+ if(!names[legacyTab])legacyTab=home;
+ const nav=tabs.map(b=>{
+  const page=b.dataset.page;
+  return `<button type="button" class="btn ${legacyTab===page?'on':'ghost'}" data-v="legacyTab" data-page="${escape(page)}" aria-current="${legacyTab===page?'page':'false'}">${escape(names[page])}</button>`;
+ }).join('');
+ const online=text('ይህን ገጽ ለመጠቀም Online ይግቡ።','Sign in online to use this page.');
+ const empty=text('በዚህ መሣሪያ የተቀመጠ መዝገብ የለም።','No saved records on this device.');
+ const details=(rows,title)=>rows.map(r=>`<details class="v11record"><summary>${escape(title(r))}</summary>${Object.entries(r).filter(([k,v])=>k!=='id'&&v!=null&&v!=='').map(([k,v])=>`<p><b>${escape(k)}</b> ${escape(v)}</p>`).join('')}</details>`).join('')||empty;
+ const reports=state.legacy?.reports||[],plans=state.legacy?.plans||[];
+ let body='';
+ if(!home||!state.extended){
+  body=text('የተፈቀዱ ገጾችና መዝገቦች በዚህ መሣሪያ እንዲቀመጡ Online ይግቡ፣ ሙሉ Offline የሥራ ቦታውን ያንቁ።','Sign in online and enable the extended workspace on this device to save authorized pages and records.');
+ }else if(legacyTab==='dashboard'){
+  const months=[...new Set(reports.map(r=>r.month).filter(Boolean))].sort().reverse();
+  if(!months.includes(legacyMonth))legacyMonth='';
+  const rows=reports.filter(r=>!legacyMonth||r.month===legacyMonth);
+  const counts=[[labels.reports,rows.length],[labels.approved,rows.filter(r=>r.status==='approved'||r.status==='locked').length],[text('ረቂቆች','Drafts'),rows.filter(r=>r.status==='draft').length]];
+  body=`<label class="v11field">${escape(labels.month)}<select id="legacyOfflineMonth">${opts([['',text('ሁሉም ወራት','All months')],...months.map(m=>[m,m])],legacyMonth)}</select></label><div class="kpis">${counts.map(([label,count])=>`<div class="kpi"><b>${count}</b><span>${escape(label)}</span></div>`).join('')}</div><h3>${escape(labels.recent)}</h3>${details([...rows].sort((a,b)=>String(b.updatedAt||b.month).localeCompare(String(a.updatedAt||a.month))).slice(0,5),r=>r.title||r.activity||r.id)}`;
+ }else if(legacyTab==='reports'||legacyTab==='plans'){
+  body=details(legacyTab==='reports'?reports:plans,r=>r.title||r.activity||r.objective||r.id);
+ }else if(legacyTab==='attendance'){
+  const people=new Map((state.directory||[]).map(p=>[p.id,p.name]));
+  body=(state.mondayRecords||[]).map(r=>`<article class="v11record">${escape(people.get(r.personId)||r.personId)} · ${escape(r.date)} · ${escape(r.status)} ${vault.mondayRoster(my().id).some(p=>p.id===r.personId)?`<button data-v="editMonday" data-id="${escape(r.id)}">${text('አርትዕ','Edit')}</button>`:''}</article>`).join('')||empty;
+ }else if(legacyTab==='directory'){
+  body=details(state.directory||[],p=>p.name||p.id);
+ }else if(legacyTab==='profilePage'){
+  body=details([state.me],p=>p.name||p.id);
+ }else if(legacyTab==='documents'&&availableSections().includes('files')){
+  body=`<button data-v="section" data-section="files">${text('የተቀመጡ ሰነዶችን ክፈት','Open saved documents')}</button>`;
+ }else if(legacyTab==='reportEntry'&&myAvailableKinds().includes('monthly')){
+  body=`<button data-v="openKind" data-kind="monthly">${text('የወር ሪፖርት ረቂቅ ክፈት','Open monthly report drafts')}</button>`;
+ }else body=online;
+ root.innerHTML=`<div class="v11wrap"><header class="v11top"><h1>${text('የጋይዮስ ዳሽቦርድ','Gaius dashboard')}</h1><button class="btn ghost" data-v="section" data-section="${state.extended?(caps().director?'director':'overview'):'offline'}">Gaius Nexus</button></header><nav class="v11nav" aria-label="${text('ነባር ገጾች','Existing pages')}">${nav}</nav><div id="v11notice" hidden></div><div class="v11guide">${text('Offline · በመሣሪያው ላይ የተቀመጠ መረጃ','Offline · Data saved on this device')} <button data-v="reconnect">${text('ግንኙነት ፈትሽ','Reconnect')}</button></div><section class="v11box"><h2>${escape(names[legacyTab]||text('ነባር ገጾች','Existing pages'))}</h2>${body}</section></div>`;
 }
 async function offlineFilesScreen(){const owner=my().id,mark=viewEpoch,files=await vault.cachedFiles(owner);if(!active||section!=='files'||my().id!==owner||mark!==viewEpoch)return;frame('<div class="v11box"><h2>'+text('የተመሰጠሩ Offline ሰነዶች','Encrypted offline documents')+'</h2><p>'+text('የተፈቀደና በዚህ መሣሪያ የተቀመጠ ሰነድ ብቻ ይነበባል። ማውረድ ከVault ውጭ ቅጂ ይፈጥራል።','Only classified documents saved on this device can be opened. Downloading creates a copy outside the encrypted vault.')+'</p>'+files.map(f=>'<article class="v11record"><b>'+escape(f.name)+'</b> · '+Math.ceil(f.size/1024)+' KB <button type="button" data-v="readCachedFile" data-id="'+escape(f.id)+'">'+text('አውርድ','Download')+'</button> <button type="button" data-v="removeCachedFile" data-id="'+escape(f.id)+'">'+text('የመሣሪያ ቅጂ አስወግድ','Remove local copy')+'</button></article>').join('')+(files.length?'':'<p>'+text('የተቀመጠ ሰነድ የለም።','No saved offline documents.')+'</p>')+'</div>');}
 function onlineRequiredScreen(){frame('<div class="v11box"><h2>'+escape(tr(section))+'</h2><p>'+text('ይህ ገጽ በፈቃድዎ ውስጥ አለ፤ ሚስጥራዊ መረጃ ወይም የServer ማረጋገጫ ስለሚፈልግ Online ይጠቀሙ።','This page remains in your authorized workspace. Connect online to access protected information and server actions.')+'</p></div>');}
@@ -495,6 +531,7 @@ root.addEventListener('submit',e=>{e.preventDefault();withBusy(async()=>{
  }
 });});
 root.addEventListener('change',e=>{
+ if(e.target.id==='legacyOfflineMonth'){legacyMonth=e.target.value;void render();return;}
  if(e.target?.matches?.('input[type="file"]')){
   const file=e.target.files?.[0],notice=root.querySelector('[data-file-status="'+e.target.id+'"]');
   if(notice){
@@ -514,7 +551,9 @@ root.addEventListener('click',e=>{const b=e.target.closest('[data-v]');if(!b)ret
  if(op==='reconnect'){if(!navigator.onLine)throw Error('offline');if(!store.hasSession()){$('logout').click();return;}await update();if(vault.vaultUnlocked(my().id))await sync();return;}
  if(op==='extended'){if(state.offlineOnly||!store.hasSession())throw Error('offline');const live=await store.state();if(live.me.id!==my().id)throw Error('forbidden');if(b.dataset.enable==='yes'&&!confirm(text('ይህ የግል የታመነ መሣሪያ ነው?','Enable encrypted offline records on this trusted device?')))return;await vault.setExtendedWorkspace(live,b.dataset.enable==='yes');await render();return;}
  if(op==='editMonday'){mondayEdit=state.mondayRecords?.find(r=>r.id===id);if(!mondayEdit)throw Error('missing');section='offline';await render();return;}
+ if(op==='legacyTab'&&section==='cachedLegacy'){legacyTab=b.dataset.page;await render();return;}
  if(op==='close'&&state.offlineOnly){
+  legacyTab='dashboard';legacyMonth='';
   if(availableSections().includes('cachedLegacy')){
    editing=null;
    section='cachedLegacy';
