@@ -469,13 +469,16 @@ function command(db,u,a,d,verifier,hashes){
 }
 // Validate a backend session for a user who is requesting an email-address change.
 // Never return this record to an unauthenticated caller.
+// Rolling inactivity lifetime; account revocation, password changes and explicit logout still invalidate tokens.
+export const SESSION_IDLE_MS=30*86400000;
+function extendSession(db,session){if(session.until-Date.now()<SESSION_IDLE_MS-86400000)db.put('sessions',{...session,until:Date.now()+SESSION_IDLE_MS});}
 export async function authenticatedUser(db,token){
   if(typeof token!=='string'||!token||token.length>256)throw new AppError('expired',401);
   const session=db.one('sessions',await digest(token));
   if(!session||session.until<=Date.now())throw new AppError('expired',401);
   const user=admitted(db.one('users',session.userId));
   if((user.sessionVersion||0)!==session.epoch)throw new AppError('expired',401);
-  return {user,session};
+  extendSession(db,session);return {user,session};
 }
 // Password derivation is asynchronous. Re-read the actor and target inside the atomic write after every await.
 export async function handle(db,route,data={},context={}){
@@ -495,7 +498,7 @@ export async function handle(db,route,data={},context={}){
       need(legacy && !(legacy.sessionVersion||0),'expired',401);return admitted(legacy);
     }
     need(s&&s.until>Date.now(),'expired',401);const u=admitted(db.one('users',s.userId));
-    need((u.sessionVersion||0)===s.epoch,'expired',401);return u;
+    need((u.sessionVersion||0)===s.epoch,'expired',401);extendSession(db,s);return u;
   };
   if(route==='login'){
     const name=userName(data.username),old=db.all('users').find(u=>String(u.username).toLowerCase()===name);
@@ -506,7 +509,7 @@ export async function handle(db,route,data={},context={}){
       const u=admitted(db.one('users',old.id));need(u.passwordHash===old.passwordHash,'invalidLogin',401);
       if(newHash)db.put('users',{...u,passwordHash:newHash});
       for(const s of db.all('sessions'))if(s.until<=Date.now())db.drop('sessions',s.id);
-      db.put('sessions',{id,userId:u.id,epoch:u.sessionVersion||0,until:Date.now()+86400000});
+      db.put('sessions',{id,userId:u.id,epoch:u.sessionVersion||0,until:Date.now()+SESSION_IDLE_MS});
       return {token};
     });
   }
