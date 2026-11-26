@@ -62,10 +62,10 @@ function legacyProjection(state){
  const u=state.me,director=isDirectorRole(u),pages=state.authorization?.legacyPages||[],can=k=>director||legacyPermission(u,k),reviews=state.reviews||[];
  const projectRows=(state.projects||[]).map(r=>({...pick(r,LEGACY_FIELDS.legacyProject),id:r.id,_v:r._v,editable:can('projects')&&(director||r.createdBy===u.id)}));
  const reportRows=(state.reports||[]).filter(safeReport).map(r=>{
-  const review=reviews.find(v=>v.id==='report:'+r.id),status=review?.recordVersion===r._v?review.state:r.submission==='draft'?'draft':r.submission==='submitted'?'submitted':r.status||'submitted';
-  return {...pick(r,[...LEGACY_FIELDS.legacyReport,'title','achieved','next']),id:r.id,_v:r._v,reviewVersion:review?._v||0,status,updatedAt:r.updatedAt,editable:!r.notes&&!r.evidence&&(director||r.userId===u.id&&['draft','revision_requested'].includes(status))};
+  const review=reviews.find(v=>v.id==='report:'+r.id),status=review&&review.recordVersion===r._v?review.state:r.submission==='draft'?'draft':r.submission==='submitted'?'submitted':r.status||'submitted';
+  return {...pick(r,[...LEGACY_FIELDS.legacyReport,'title','achieved','next']),id:r.id,_v:r._v,reviewVersion:review?._v||0,status,updatedAt:r.updatedAt,editable:Number.isInteger(r._v)&&!r.notes&&!r.evidence&&(director||r.userId===u.id&&['draft','revision_requested'].includes(status))};
  });
- const planRows=(state.plans||[]).map(r=>{const review=reviews.find(v=>v.id==='plan:'+r.id),status=review?.recordVersion===r._v?review.state:r.submission==='draft'?'draft':'submitted';return {...pick(r,LEGACY_FIELDS.legacyPlan),id:r.id,_v:r._v,reviewVersion:review?._v||0,status,updatedAt:r.updatedAt,editable:director||r.userId===u.id&&['draft','revision_requested'].includes(status)};});
+ const planRows=(state.plans||[]).map(r=>{const review=reviews.find(v=>v.id==='plan:'+r.id),status=review&&review.recordVersion===r._v?review.state:r.submission==='draft'?'draft':'submitted';return {...pick(r,LEGACY_FIELDS.legacyPlan),id:r.id,_v:r._v,reviewVersion:review?._v||0,status,updatedAt:r.updatedAt,editable:Number.isInteger(r._v)&&(director||r.userId===u.id&&['draft','revision_requested'].includes(status))};});
  return {reports:reportRows,plans:planRows,projects:projectRows,
  announcements:(state.announcements||[]).map(r=>({...pick(r,LEGACY_FIELDS.legacyAnnouncement),id:r.id,_v:r._v,editable:can('announcements')})),
  documents:(state.documents||[]).map(r=>({...pick(r,LEGACY_FIELDS.legacyDocument),id:r.id,_v:r._v,editable:can('documents')&&(director||r.ownerId===u.id)})),
