@@ -43,12 +43,15 @@ const api=new URLSearchParams(location.search).get('workspace')==='local' ? '' :
 export const shared=!!api;
 export const localArchive=!!configured&&!shared;
 const tokenKey='gaius.v10.session:'+ (api||'local');
-export function hasSession(){return !!(sessionStorage.getItem(tokenKey)||(!shared&&sessionStorage.me));}
+// Persistent sign-in on this origin; explicit logout clears both stores.
+const readToken=()=>sessionStorage.getItem(tokenKey)||localStorage.getItem(tokenKey);
+function rememberToken(token){sessionStorage.setItem(tokenKey,token);if(shared)localStorage.setItem(tokenKey,token);}
+export function hasSession(){return !!(readToken()||(!shared&&sessionStorage.me));}
 let stateCache=null,stateFlight=null,stateGeneration=0;
 function invalidateState(){stateGeneration++;stateCache=null;stateFlight=null;}
-export function clearSession(){invalidateState();sessionStorage.removeItem('gaius.offline.localSession');sessionStorage.removeItem('gaius.v11.offlineIdentity');localStorage.removeItem('gaius.offline.device');sessionStorage.removeItem(tokenKey);if(!shared)sessionStorage.removeItem('me');}
-async function call(route,data={}){
-  const token=sessionStorage.getItem(tokenKey);
+export function clearOnlineSession(){invalidateState();sessionStorage.removeItem(tokenKey);localStorage.removeItem(tokenKey);}
+export function clearSession(){clearOnlineSession();sessionStorage.removeItem('gaius.offline.localSession');sessionStorage.removeItem('gaius.v11.offlineIdentity');localStorage.removeItem('gaius.offline.device');sessionStorage.removeItem(tokenKey);if(!shared)sessionStorage.removeItem('me');}
+async function call(route,data={},token=readToken()) {
   if(!shared)return handle(local,route,data,{local:true,token,legacyId:sessionStorage.me});
   let target;try{target=new URL(api);}catch{throw new AppError('configInvalid');}
   if(target.protocol!=='https:'&&!['localhost','127.0.0.1'].includes(target.hostname))throw new AppError('configInvalid');
@@ -62,21 +65,21 @@ async function call(route,data={}){
 export const info=()=>call('info');
 // Short-lived in-memory reuse only; never persist private data or use it offline.
 export async function state({reuse=false}={}){
- const identity=sessionStorage.getItem(tokenKey)||(!shared?sessionStorage.me:'');
+ const identity=readToken()||(!shared?sessionStorage.me:'');
  if(reuse&&navigator.onLine&&identity&&stateCache?.identity===identity&&Date.now()-stateCache.at<5000)return stateCache.value;
  if(stateFlight?.identity===identity)return stateFlight.promise;
  const generation=stateGeneration;
  const promise=call('state').then(value=>{
-  const current=sessionStorage.getItem(tokenKey)||(!shared?sessionStorage.me:'');
+  const current=readToken()||(!shared?sessionStorage.me:'');
   if(current!==identity)throw new AppError('expired',401);
   if(generation!==stateGeneration)return state();
-  stateCache={identity,at:Date.now(),value};return value;
+  if(shared&&identity)rememberToken(identity);stateCache={identity,at:Date.now(),value};return value;
  }).finally(()=>{if(stateFlight?.promise===promise)stateFlight=null;});
  stateFlight={identity,promise};return promise;
 }
 export const register=d=>shared&&['country_director','international_director'].includes(d.role)?call('director/claim',{registration:d,code:d.directorEmailCode}):call('register',d);
 export const requestDirectorCode=(role,email,setupKey)=>{if(!shared)throw new AppError('directorRequiresServer',403);return call('director/challenge',{role,email,setupKey});};
-export async function login(d){invalidateState();sessionStorage.removeItem('gaius.v11.offlineIdentity');localStorage.removeItem('gaius.offline.device');const {token}=await call('login',d);sessionStorage.setItem(tokenKey,token);if(!shared)sessionStorage.removeItem('me');}
+export async function login(d,{expectedOwner=null}={}){const {token}=await call('login',d,null);if(expectedOwner){try{const state=await call('state',{},token);if(state.me?.id!==expectedOwner)throw new AppError('forbidden',403);}catch(e){try{await call('logout',{},token);}catch{}throw e;}}invalidateState();sessionStorage.removeItem('gaius.offline.localSession');sessionStorage.removeItem('gaius.v11.offlineIdentity');if(!expectedOwner)localStorage.removeItem('gaius.offline.device');rememberToken(token);if(!shared)sessionStorage.removeItem('me');}
 export async function logout(){try{await call('logout');}finally{clearSession();}}
 export async function command(action,payload,requestId=crypto.randomUUID()){
   const mutating=!['governance.list','governance.photo'].includes(action);if(mutating)invalidateState();
@@ -110,7 +113,7 @@ export async function uploadFile(file,scopeType='organization',scopeId='org'){
   invalidateState();
   if(!shared)throw new AppError('storageRequiresServer',503);
   if(!file||file.size>10*1024*1024)throw new AppError('fileTooLarge',413);
-  const token=sessionStorage.getItem(tokenKey);
+  const token=readToken();
   let res;try{res=await fetch(api+'/file/upload',{method:'POST',cache:'no-store',credentials:'omit',
     headers:{'Authorization':'Bearer '+token,'Content-Type':({pdf:'application/pdf',docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',doc:'application/msword',
        pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation',ppt:'application/vnd.ms-powerpoint',
@@ -124,7 +127,7 @@ export async function uploadFile(file,scopeType='organization',scopeId='org'){
 }
 export async function downloadFile(id){
   if(!shared)throw new AppError('storageRequiresServer',503);
-  const token=sessionStorage.getItem(tokenKey);
+  const token=readToken();
   let res;try{res=await fetch(api+'/file/download',{method:'POST',cache:'no-store',credentials:'omit',headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({id})});}
   catch{throw new AppError('offline',503);}
   if(!res.ok){const body=await res.json().catch(()=>({}));throw new AppError(body.error||'serviceError',res.status);}
